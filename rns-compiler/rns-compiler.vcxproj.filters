@@ -5,4 +5,7 @@
     <ClCompile Include="dependencies\rns-lib\lib\src\os.cpp" />
     <ClCompile Include="dependencies\rns-lib\lib\src\data_structures.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\file.h" />
+  </ItemGroup>
 </Project>
