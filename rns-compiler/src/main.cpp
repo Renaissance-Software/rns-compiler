@@ -1553,7 +1553,6 @@ struct IR
     ValueBuffer vb;
 };
 
-
 static inline Instruction instr(InstructionID id, s64 operand1 = INT64_MAX, s64 operand2 = INT64_MAX, s64 result = INT64_MAX)
 {
     Instruction i = {
@@ -1601,22 +1600,19 @@ s64 transform_node_to_ir(ModuleParser* m, IR* ir, u32 node_id, ScopedStorage* sc
                 u32 ast_local = scoped_storage->ast_local_variables[i];
                 Node* ast_local_node = m->nb.get(ast_local);
                 assert(ast_local_node);
-                assert(ast_local_node->type == NodeType::VarDecl);
-                u32 ast_local_name_id = ast_local_node->var_decl.name;
-                Node* ast_local_name_node = m->nb.get(ast_local_name_id);
-                assert(ast_local_name_node);
-                assert(ast_local_name_node->type == NodeType::SymName);
-                const char* local_name = ast_local_name_node->sym_name.ptr;
-                assert(local_name);
-
-                if (strcmp(local_name, var_name) == 0)
+                if (ast_local_node->type == NodeType::VarDecl)
                 {
-                    Value resolve_name_value = {};
-                    resolve_name_value.op_type = OperandType::StackAddress;
-                    resolve_name_value.type = NativeTypeID::S32;
-                    resolve_name_value.stack.id = scoped_storage->ir_local_variables[i];
+                    u32 ast_local_name_id = ast_local_node->var_decl.name;
+                    Node* ast_local_name_node = m->nb.get(ast_local_name_id);
+                    assert(ast_local_name_node);
+                    assert(ast_local_name_node->type == NodeType::SymName);
+                    const char* local_name = ast_local_name_node->sym_name.ptr;
+                    assert(local_name);
 
-                    return ir->vb.append(resolve_name_value);
+                    if (strcmp(local_name, var_name) == 0)
+                    {
+                        return scoped_storage->ir_local_variables[i];
+                    }
                 }
             }
             assert(0);
@@ -1624,14 +1620,14 @@ s64 transform_node_to_ir(ModuleParser* m, IR* ir, u32 node_id, ScopedStorage* sc
         } break;
         case NodeType::BinOp:
         {
-            Value op_result =
-            {
-                // @TODO: change this
-                .type = NativeTypeID::S32,
-                .op_type = OperandType::New,
-            };
-            s64 result = ir->vb.append(op_result);
-            ir->vb.ptr[ir->vb.len - 1].stack.id = result;
+            Value op_result;
+            op_result.type = NativeTypeID::S32;
+            op_result.op_type = OperandType::New;
+            s64 op_result_id = ir->vb.append(op_result);
+            s64 index = scoped_storage->local_variable_count++;
+            scoped_storage->ir_local_variables[index] = op_result_id;
+            scoped_storage->ast_local_variables[index] = node_id;
+            ir->ib.append(instr(InstructionID::Decl, op_result_id, ir_no_value, op_result_id));
 
             u32 left_node_id = node->bin_op.left;
             u32 right_node_id = node->bin_op.right;
@@ -1643,14 +1639,14 @@ s64 transform_node_to_ir(ModuleParser* m, IR* ir, u32 node_id, ScopedStorage* sc
             switch (op)
             {
                 case BinOp::Plus:
-                    ir->ib.append(instr(InstructionID::Add, left_value_id, right_value_id, result));
+                    ir->ib.append(instr(InstructionID::Add, left_value_id, right_value_id, op_result_id));
                     break;
                 default:
                     RNS_NOT_IMPLEMENTED;
                     break;
             }
 
-            return result;
+            return op_result_id;
         } break;
         case NodeType::VarDecl:
         {
@@ -1718,15 +1714,123 @@ IR generate_ir(ModuleParser* m, Allocator* instruction_allocator, Allocator* val
             auto st_id = tld_node->function_decl.statements.ptr[i];
             transform_node_to_ir(m, &ir, st_id, &scoped_storage);
         }
+    }
 
-        for (auto i = 0; i < ir.ib.len; i++)
+    return ir;
+}
+
+namespace Interp
+{
+    struct Variable
+    {
+        s32 value;
+    };
+
+    struct Runtime
+    {
+        Interp::Variable variables[100];
+        s64 ir_ids_reserved[30];
+        s64 var_count = 0;
+    };
+}
+
+Interp::Variable* get_local_variable(Interp::Runtime* runtime, s64 id)
+{
+    for (auto i = 0; i < runtime->var_count; i++)
+    {
+        if (id == runtime->ir_ids_reserved[i])
         {
-            auto instruction = ir.ib.ptr[i];
-            instruction.print(&ir.vb);
+            return &runtime->variables[i];
         }
     }
 
-    return {};
+    return nullptr;
+}
+// @TODO: for now, we are only dealing with s32 values
+s32 resolve_index(IR* ir, Interp::Runtime* runtime, s64 index)
+{
+    Interp::Variable* variable = get_local_variable(runtime, index);
+    if (variable)
+    {
+        return variable->value;
+    }
+
+    auto value = ir->vb.get(index);
+
+    switch (value.type)
+    {
+        case NativeTypeID::S32:
+            return (s32)value.int_lit.lit;
+        default:
+            RNS_NOT_IMPLEMENTED;
+            return 0;
+    }
+}
+
+
+void interpret(IR* ir)
+{
+    s32 result = 0;
+    auto instruction_count = ir->ib.len;
+
+    Interp::Runtime runtime = {};
+    memset(&runtime.ir_ids_reserved, 0xcccccccc, sizeof(runtime.ir_ids_reserved));
+
+    for (auto i = 0; i < instruction_count; i++)
+    {
+        auto instruction = ir->ib.ptr[i];
+
+        switch (instruction.id)
+        {
+            case InstructionID::Decl:
+            {
+                // This should be the equivalent of stack reserving
+                auto id = instruction.operands[0];
+                runtime.ir_ids_reserved[runtime.var_count++] = id;
+            } break;
+            case InstructionID::Add:
+            {
+                auto op1_id = instruction.operands[0];
+                auto op2_id = instruction.operands[1];
+                auto result_id = instruction.result;
+                s32 op1_value = resolve_index(ir, &runtime, op1_id);
+                s32 op2_value = resolve_index(ir, &runtime, op2_id);
+                auto* result_variable = get_local_variable(&runtime, result_id);
+                assert(result_variable);
+                result_variable->value = op1_value + op2_value;
+            } break;
+            case InstructionID::Assign:
+            {
+                auto op1_id = instruction.operands[0];
+                auto op2_id = instruction.operands[1];
+                auto result_id = instruction.result;
+                s32 op1_value = resolve_index(ir, &runtime, op1_id);
+                s32 op2_value = resolve_index(ir, &runtime, op2_id);
+                auto* result_variable = get_local_variable(&runtime, result_id);
+                assert(result_variable);
+                result_variable->value = op2_value;
+            } break;
+            case InstructionID::Ret:
+            {
+                auto op1_id = instruction.operands[0];
+                s32 op1_value = resolve_index(ir, &runtime, op1_id);
+                printf("Function returned %d\n", op1_value);
+            } break;
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
+        }
+    }
+}
+
+void jit(IR* ir)
+{
+
+}
+
+void compile(IR* ir)
+{
+
 }
 
 #include "file.h"
@@ -1737,6 +1841,57 @@ static inline DebugAllocator create_allocator(s64 size)
     assert(address);
     DebugAllocator allocator = DebugAllocator::create(address, size);
     return allocator;
+}
+
+#include <RNS/os_internal.h>
+/*
+typedef struct _IMAGE_DOS_HEADER {      // DOS .EXE header
+    WORD   e_magic;                     // Magic number
+    WORD   e_cblp;                      // Bytes on last page of file
+    WORD   e_cp;                        // Pages in file
+    WORD   e_crlc;                      // Relocations
+    WORD   e_cparhdr;                   // Size of header in paragraphs
+    WORD   e_minalloc;                  // Minimum extra paragraphs needed
+    WORD   e_maxalloc;                  // Maximum extra paragraphs needed
+    WORD   e_ss;                        // Initial (relative) SS value
+    WORD   e_sp;                        // Initial SP value
+    WORD   e_csum;                      // Checksum
+    WORD   e_ip;                        // Initial IP value
+    WORD   e_cs;                        // Initial (relative) CS value
+    WORD   e_lfarlc;                    // File address of relocation table
+    WORD   e_ovno;                      // Overlay number
+    WORD   e_res[4];                    // Reserved words
+    WORD   e_oemid;                     // OEM identifier (for e_oeminfo)
+    WORD   e_oeminfo;                   // OEM information; e_oemid specific
+    WORD   e_res2[10];                  // Reserved words
+    LONG   e_lfanew;                    // File address of new exe header
+  } IMAGE_DOS_HEADER, *PIMAGE_DOS_HEADER;
+  */
+
+void write_executable()
+{
+    void* address = virtual_alloc(nullptr, 1024*1024, { .commit = 1, .reserve = 1, .execute = 0, .read = 1, .write = 1 });
+    IMAGE_DOS_HEADER dos_header
+    {
+        .e_magic = IMAGE_DOS_SIGNATURE,
+        .e_cblp = 0x90,
+        .e_cp = 0x03,
+        .e_cparhdr = 0x04,
+        .e_minalloc = 0,
+        .e_maxalloc = 0xFFFF,
+        .e_sp = 0xb8,
+        .e_lfarlc = 0x40,
+        .e_lfanew = 0xc8,
+    };
+    auto* header = reinterpret_cast<IMAGE_DOS_HEADER*>(address);
+    *header = dos_header;
+
+    auto file_handle = CreateFileA("test.exe", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    assert(file_handle != INVALID_HANDLE_VALUE);
+
+    DWORD bytes_written = 0;
+    WriteFile(file_handle, header, sizeof(IMAGE_DOS_HEADER), &bytes_written, 0);
+    CloseHandle(file_handle);
 }
 
 s32 rns_main(s32 argc, char* argv[])
@@ -1764,7 +1919,14 @@ s32 rns_main(s32 argc, char* argv[])
     DebugAllocator instruction_allocator = create_allocator(RNS_MEGABYTE(300));
     DebugAllocator value_allocator = create_allocator(RNS_MEGABYTE(300));
     IR ir = generate_ir(&module_parser, &instruction_allocator, &value_allocator);
+    //for (auto i = 0; i < ir.ib.len; i++)
+    //{
+    //    auto instruction = ir.ib.ptr[i];
+    //    instruction.print(&ir.vb);
+    //}
 
+    interpret(&ir);
 
+    write_executable();
     return 0;
 }
