@@ -1868,29 +1868,243 @@ typedef struct _IMAGE_DOS_HEADER {      // DOS .EXE header
   } IMAGE_DOS_HEADER, *PIMAGE_DOS_HEADER;
   */
 
+struct FileBuffer
+{
+    u8* ptr;
+    s64 len;
+    s64 cap;
+
+    static FileBuffer create(Allocator* allocator)
+    {
+        FileBuffer ab =
+        {
+            .ptr = reinterpret_cast<u8*>(allocator->pool.ptr + allocator->pool.used),
+            .len = 0,
+            .cap = (allocator->pool.cap - allocator->pool.used) / (s64)sizeof(u8),
+        };
+
+        return ab;
+    }
+
+    template <typename T>
+    T* append(T element) {
+        s64 size = sizeof(T);
+        assert(len + size < cap);
+        auto index = len;
+        memcpy(&ptr[index], &element, size);
+        len += size;
+        return reinterpret_cast<T*>(&ptr[index]);
+    }
+
+    template <typename T>
+    T* append(T* element)
+    {
+        s64 size = sizeof(T);
+        assert(len + size < cap);
+        auto index = len;
+        memcpy(&ptr[index], element, size);
+        len += size;
+        return reinterpret_cast<T*>(&ptr[index]);
+    }
+
+    template<typename T>
+    T* append(T* arr, s64 array_len)
+    {
+        s64 size = sizeof(T) * array_len;
+        assert(len + size < cap);
+        auto index = len;
+        memcpy(&ptr[index], arr, size);
+        len += size;
+        return reinterpret_cast<T*>(&ptr[index]);
+    }
+};
+
+enum class ImageDirectoryIndex
+{
+    Export,
+    Import,
+    Resource,
+    Exception,
+    Security,
+    Relocation,
+    Debug,
+    Architecture,
+    GlobalPtr,
+    TLS,
+    LoadConfig,
+    BoundImport,
+    IAT,
+    Delay,
+    CLR,
+};
+
 void write_executable()
 {
-    void* address = virtual_alloc(nullptr, 1024*1024, { .commit = 1, .reserve = 1, .execute = 0, .read = 1, .write = 1 });
+    DebugAllocator file_allocator = create_allocator(RNS_MEGABYTE(1));
+    FileBuffer file_buffer = FileBuffer::create(&file_allocator);
     IMAGE_DOS_HEADER dos_header
     {
         .e_magic = IMAGE_DOS_SIGNATURE,
-        .e_cblp = 0x90,
-        .e_cp = 0x03,
-        .e_cparhdr = 0x04,
-        .e_minalloc = 0,
-        .e_maxalloc = 0xFFFF,
-        .e_sp = 0xb8,
-        .e_lfarlc = 0x40,
-        .e_lfanew = 0xc8,
+        .e_lfanew = sizeof(IMAGE_DOS_HEADER),
     };
-    auto* header = reinterpret_cast<IMAGE_DOS_HEADER*>(address);
-    *header = dos_header;
+    file_buffer.append(&dos_header);
+    file_buffer.append((u32)IMAGE_NT_SIGNATURE);
+
+    IMAGE_FILE_HEADER image_file_header = {
+        .Machine = IMAGE_FILE_MACHINE_AMD64,
+        .NumberOfSections = 2,
+        .TimeDateStamp = 0x5EF48E56,
+        .SizeOfOptionalHeader = sizeof(IMAGE_OPTIONAL_HEADER64),
+        .Characteristics = IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_LARGE_ADDRESS_AWARE,
+    };
+    file_buffer.append(&image_file_header);
+
+    IMAGE_OPTIONAL_HEADER64 oh = {
+        .Magic = IMAGE_NT_OPTIONAL_HDR64_MAGIC,
+        .SizeOfCode = 0x200, // @TODO: change
+        .SizeOfInitializedData = 0x400, // @TODO: change (global data)
+        .SizeOfUninitializedData = 0x0, // @TODO: what's the difference?
+        .AddressOfEntryPoint = 0x1000, // @TODO: change
+        .BaseOfCode = 0x1000,// @TODO: change
+        .ImageBase = 0x0000000140000000,
+        .SectionAlignment = 0x1000,
+        .FileAlignment = 0x200,
+        .MajorOperatingSystemVersion = 6, // @TODO: change
+        .MinorOperatingSystemVersion = 0, // @TODO: change
+        .MajorImageVersion = 0,
+        .MinorImageVersion = 0,
+        .MajorSubsystemVersion = 6,
+        .MinorSubsystemVersion = 0,
+        .Win32VersionValue = 0,
+        .SizeOfImage = 0x3000,
+        .SizeOfHeaders = 0,
+        .CheckSum = 0,
+        .Subsystem = IMAGE_SUBSYSTEM_WINDOWS_CUI,
+        .DllCharacteristics = IMAGE_DLLCHARACTERISTICS_HIGH_ENTROPY_VA | IMAGE_DLLCHARACTERISTICS_NX_COMPAT | IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE | IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE,
+        .SizeOfStackReserve = 0x100000,
+        .SizeOfStackCommit = 0x1000,
+        .SizeOfHeapReserve = 0x100000,
+        .SizeOfHeapCommit = 0x1000,
+        .NumberOfRvaAndSizes = IMAGE_NUMBEROF_DIRECTORY_ENTRIES,
+    };
+    auto* optional_header = file_buffer.append(&oh);
+
+    IMAGE_SECTION_HEADER tsh = {
+        .Name = ".text",
+        .Misc = {.VirtualSize = 0x10}, // sizeof machine code in bytes
+        .VirtualAddress = optional_header->BaseOfCode, // calculate this
+        .SizeOfRawData = optional_header->SizeOfCode, // calculate this
+        .PointerToRawData = 0,
+        .Characteristics = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_EXECUTE,
+    };
+    auto* text_section_header = file_buffer.append(&tsh);
+
+    IMAGE_SECTION_HEADER rdsh = {
+      .Name = ".rdata",
+      .Misc = 0x10,
+      .VirtualAddress = 0x2000, // calculate this
+      .SizeOfRawData = 0x200, // calculate this
+      .PointerToRawData = 0,
+      .Characteristics = IMAGE_SCN_CNT_INITIALIZED_DATA | IMAGE_SCN_MEM_READ,
+    };
+    auto* rdata_section_header = file_buffer.append(&rdsh);
+
+    // end list with a NULL header
+    file_buffer.append(IMAGE_SECTION_HEADER{});
+
+    optional_header->SizeOfHeaders = static_cast<DWORD>(align(file_buffer.len, optional_header->FileAlignment));
+    file_buffer.len = optional_header->SizeOfHeaders;
+
+    IMAGE_SECTION_HEADER* sections[] = { text_section_header, rdata_section_header };
+    auto section_offset = optional_header->SizeOfHeaders;
+    for (auto i = 0; i < rns_array_length(sections); i++)
+    {
+        sections[i]->PointerToRawData = section_offset;
+        section_offset += sections[i]->SizeOfRawData;
+    }
+
+    // .text section
+    file_buffer.len = text_section_header->PointerToRawData;
+
+    u8 sub_rsp_28_bytes[] = { 0x48, 0x83, 0xEC, 0x28, 0xB9, 0x2A, 0x00, 0x00, 0x00, };
+    file_buffer.append(sub_rsp_28_bytes, rns_array_length(sub_rsp_28_bytes));
+    u8 call_bytes[] = { 0xFF, 0x15, 0xF1, 0x0F, 0x00, 0x00, };
+    file_buffer.append(call_bytes, rns_array_length(call_bytes));
+    u8 int3_bytes[] = { 0xCC };
+    file_buffer.append(int3_bytes, rns_array_length(int3_bytes));
+
+    const char* functions[] = { "ExitProcess" };
+
+    struct Import
+    {
+        const char* library_name;
+        const char** functions;
+        u32 function_count;
+    } kernel32 = {
+        .library_name = "kernel32.dll",
+        .functions = functions,
+        .function_count = rns_array_length(functions),
+    };
+
+    (void)kernel32;
+
+#define file_offset_to_rva(_section_header_)\
+    (static_cast<DWORD>(file_buffer.len) - (_section_header_)->PointerToRawData + (_section_header_)->VirtualAddress)
+
+    // .rdata section
+    file_buffer.len = rdata_section_header->PointerToRawData;
+
+    DWORD IAT_RVA = file_offset_to_rva(rdata_section_header);
+    u64* exit_process_name_rva = file_buffer.append((u64)0);
+    file_buffer.append((u64)0);
+    optional_header->DataDirectory[static_cast<u32>(ImageDirectoryIndex::Import)].VirtualAddress = static_cast<DWORD>(IAT_RVA);
+    optional_header->DataDirectory[static_cast<u32>(ImageDirectoryIndex::Import)].Size = static_cast<DWORD>(file_buffer.len) - rdata_section_header->PointerToRawData;
+
+    u8 exit_process_name[] = "ExitProcess";
+    u8 library_name[] = "KERNEL32.dll";
+
+    DWORD kernel32_name_RVA = file_offset_to_rva(rdata_section_header);
+    {
+        file_buffer.append(library_name, rns_array_length(library_name));
+        s64 to_be_added = align(rns_array_length(library_name), 2) - rns_array_length(library_name);
+        file_buffer.len += to_be_added;
+    }
+
+    auto import_directory_RVA = file_offset_to_rva(rdata_section_header);
+    optional_header->DataDirectory[static_cast<u32>(ImageDirectoryIndex::Import)].VirtualAddress = static_cast<DWORD>(import_directory_RVA);
+
+    IMAGE_IMPORT_DESCRIPTOR iid = {
+        .Name = kernel32_name_RVA,
+        .FirstThunk = IAT_RVA,
+    };
+    auto* image_import_descriptor = file_buffer.append(&iid);
+    DWORD image_thunk_RVA = file_offset_to_rva(rdata_section_header);
+    image_import_descriptor->OriginalFirstThunk = image_thunk_RVA;
+    
+    u64* image_thunk = file_buffer.append((u64)0);
+    file_buffer.append((u64)0);
+
+    {
+        DWORD import_name_rva = file_offset_to_rva(rdata_section_header);
+
+        *exit_process_name_rva = import_name_rva;
+        *image_thunk = import_name_rva;
+
+        file_buffer.append((u16)0);
+
+        file_buffer.append(exit_process_name, rns_array_length(exit_process_name));
+        s64 to_be_added = align(rns_array_length(exit_process_name), 2) - rns_array_length(exit_process_name);
+        file_buffer.len += to_be_added;
+    }
+
+    optional_header->DataDirectory[static_cast<u32>(ImageDirectoryIndex::Import)].Size = file_offset_to_rva(rdata_section_header) - import_directory_RVA;
+    file_buffer.len = (u64)rdata_section_header->PointerToRawData + (u64)rdata_section_header->SizeOfRawData;
 
     auto file_handle = CreateFileA("test.exe", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     assert(file_handle != INVALID_HANDLE_VALUE);
 
     DWORD bytes_written = 0;
-    WriteFile(file_handle, header, sizeof(IMAGE_DOS_HEADER), &bytes_written, 0);
+    WriteFile(file_handle, file_buffer.ptr, (DWORD)file_buffer.len, &bytes_written, 0);
     CloseHandle(file_handle);
 }
 
