@@ -17,10 +17,23 @@
   <ItemGroup>
     <ClCompile Include="dependencies\rns-lib\lib\src\data_structures.cpp" />
     <ClCompile Include="dependencies\rns-lib\lib\src\os.cpp" />
+    <ClCompile Include="src\bytecode.cpp" />
+    <ClCompile Include="src\interpreter.cpp" />
+    <ClCompile Include="src\lexer.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\x86_64.cpp" />
+    <ClCompile Include="src\parser.cpp" />
+    <ClCompile Include="src\pe32.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\bytecode.h" />
+    <ClInclude Include="src\compiler_types.h" />
     <ClInclude Include="src\file.h" />
+    <ClInclude Include="src\interpreter.h" />
+    <ClInclude Include="src\lexer.h" />
+    <ClInclude Include="src\parser.h" />
+    <ClInclude Include="src\pe32.h" />
+    <ClInclude Include="src\x86_64_encoding.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
@@ -91,7 +104,7 @@
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
       <AdditionalIncludeDirectories>$(ProjectDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
