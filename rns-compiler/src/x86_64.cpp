@@ -1,6 +1,7 @@
 #include <RNS/types.h>
 #include <RNS/compiler.h>
 #include <RNS/os.h>
+#include <RNS/os_internal.h>
 #include <RNS/data_structures.h>
 
 #include <stdio.h>
@@ -413,12 +414,6 @@ struct Buffer
     }
 };
 
-struct StackPatch
-{
-    s32* location;
-    u32 size;
-};
-
 struct StructBuilderField
 {
     DescriptorStructField descriptor;
@@ -580,8 +575,6 @@ struct FunctionBuilder
     InstructionBuffer instruction_buffer;
     Descriptor* descriptor;
     ExecutionBuffer* eb;
-    StackPatch* stack_displacements;
-    s64 stack_displacement_count;
     Label* epilogue_label;
 
     Value* value;
@@ -880,6 +873,24 @@ static inline Operand imm64(u64 value)
     return operand;
 }
 
+static inline Operand imm_auto(u64 value)
+{
+    if (value <= UINT8_MAX)
+    {
+        return imm8((u8)value);
+    }
+    if (value <= UINT16_MAX)
+    {
+        return imm16((u16)value);
+    }
+    if (value <= UINT32_MAX)
+    {
+        return imm32((u32)value);
+    }
+    
+    return imm64(value);
+}
+
 const u8  stack_fill_value_8  = 0xcc;
 const u16 stack_fill_value_16 = 0xcccc;
 const u32 stack_fill_value_32 = 0xcccccc;
@@ -1064,93 +1075,116 @@ bool memory_range_equal_to_c_string(const void* range_start, const void* range_e
     return memcmp(range_start, string, string_length) == 0;
 }
 
-Descriptor * C_parse_type(DescriptorBuffer* descriptor_buffer, const char *range_start, const char *range_end
-) {
-  Descriptor *descriptor = 0;
+Descriptor* C_parse_type(DescriptorBuffer* descriptor_buffer, const char* range_start, const char* range_end)
+{
+    Descriptor* descriptor = 0;
 
-  const char *start = range_start;
-  for(const char *ch = range_start; ch <= range_end; ++ch) {
-    if (!(*ch == ' ' || *ch == '*' || ch == range_end)) continue;
-    if (start != ch) {
-      if (memory_range_equal_to_c_string(start, ch, "char")) {
-        descriptor = (Descriptor*)&descriptor_s8;
-      } else if (memory_range_equal_to_c_string(start, ch, "int")) {
-        descriptor = (Descriptor*)&descriptor_s32;
-      } else if (memory_range_equal_to_c_string(start, ch, "void")) {
-        descriptor = (Descriptor*)&descriptor_void;
-      } else if (memory_range_equal_to_c_string(start, ch, "const")) {
-        // TODO support const values?
-      } else {
-        assert(!"Unsupported argument type");
-      }
+    const char* start = range_start;
+    for (const char* ch = range_start; ch <= range_end; ++ch)
+    {
+        if (!(*ch == ' ' || *ch == '*' || ch == range_end))
+        {
+            continue;
+        }
+
+        if (start != ch)
+        {
+            if (memory_range_equal_to_c_string(start, ch, "char") || memory_range_equal_to_c_string(start, ch, "s8"))
+            {
+                descriptor = (Descriptor*)&descriptor_s8;
+            }
+            else if (memory_range_equal_to_c_string(start, ch, "int") || memory_range_equal_to_c_string(start, ch, "s32"))
+            {
+                descriptor = (Descriptor*)&descriptor_s32;
+            }
+            else if (memory_range_equal_to_c_string(start, ch, "void*") || memory_range_equal_to_c_string(start, ch, "s64"))
+            {
+                descriptor = (Descriptor*)&descriptor_s64;
+            }
+            else if (memory_range_equal_to_c_string(start, ch, "void"))
+            {
+                descriptor = (Descriptor*)&descriptor_void;
+            }
+            else if (memory_range_equal_to_c_string(start, ch, "const"))
+            {
+                // TODO support const values?
+            }
+            else
+            {
+                assert(!"Unsupported argument type");
+            }
+        }
+
+        if (*ch == '*')
+        {
+            assert(descriptor);
+            Descriptor* previous_descriptor = descriptor;
+            descriptor = descriptor_buffer->allocate();
+            *descriptor = {
+                .type = DescriptorType::Pointer,
+                .pointer_to = previous_descriptor,
+            };
+        }
+        start = ch + 1;
     }
-    if (*ch == '*') {
-      assert(descriptor);
-      Descriptor *previous_descriptor = descriptor;
-      descriptor = descriptor_buffer->allocate();
-      *descriptor = {
-        .type = DescriptorType::Pointer,
-        .pointer_to = previous_descriptor,
-      };
-    }
-    start = ch + 1;
-  }
-  return descriptor;
+
+    return descriptor;
 }
 
-Value* C_function_return_value(DescriptorBuffer* descriptor_buffer, ValueBuffer* value_buffer, const char *forward_declaration) {
-    const char *ch = strchr(forward_declaration, '(');
+Value* C_function_return_value(DescriptorBuffer* descriptor_buffer, ValueBuffer* value_buffer, const char* forward_declaration) {
+    const char* ch = strchr(forward_declaration, '(');
     assert(ch);
     --ch;
 
     // skip whitespace before (
-    for(; *ch == ' '; --ch);
-    for(;
-      (*ch >= 'a' && *ch <= 'z') ||
-      (*ch >= 'A' && *ch <= 'Z') ||
-      (*ch >= '0' && *ch <= '9') ||
-      *ch == '_';
-      --ch
-    )
-    // skip whitespace before function name
-    for(; *ch == ' '; --ch);
-    ++ch;
-    Descriptor *descriptor = C_parse_type(descriptor_buffer, forward_declaration, ch);
-    assert(descriptor);
-    switch(descriptor->type) {
-      case DescriptorType::Void: {
-        return &void_value;
-      }
-      case DescriptorType::Function:
-      case DescriptorType::Integer:
-      case DescriptorType::Pointer: {
-          Value* return_value = value_buffer->allocate();
-        *return_value = {
-          .descriptor = descriptor,
-          .operand = reg.eax,
-        };
-        return return_value;
-      }
-      case DescriptorType::TaggedUnion:
-      case DescriptorType::FixedSizeArray:
-      case DescriptorType::Struct:
-      default: {
-        assert(!"Unsupported return type");
-      }
+    for (; *ch == ' '; --ch)
+    {
     }
-    return 0;
+    for (; (*ch >= 'a' && *ch <= 'z') || (*ch >= 'A' && *ch <= 'Z') || (*ch >= '0' && *ch <= '9') || *ch == '_'; --ch)
+    {
+        // skip whitespace before function name
+        for (; *ch == ' '; --ch) { }
+    }
+    ++ch;
+
+    Descriptor* descriptor = C_parse_type(descriptor_buffer, forward_declaration, ch);
+    assert(descriptor);
+
+    switch (descriptor->type)
+    {
+        case DescriptorType::Void:
+            return &void_value;
+        case DescriptorType::Function:
+        case DescriptorType::Integer:
+        case DescriptorType::Pointer:
+        {
+            Value* return_value = reg_value(value_buffer, Register::A, descriptor);
+            return return_value;
+        }
+        case DescriptorType::TaggedUnion:
+        case DescriptorType::FixedSizeArray:
+        case DescriptorType::Struct:
+        default:
+        {
+            assert(!"Unsupported return type");
+        }
+    }
+
+    return nullptr;
 }
 
-Value* C_function_value(DescriptorBuffer* descriptor_buffer, ValueBuffer* value_buffer, const char* forward_declaration, u64 fn) {
+Value* C_function_value(DescriptorBuffer* descriptor_buffer, ValueBuffer* value_buffer, const char* forward_declaration, u64 fn)
+{
     Descriptor* descriptor = descriptor_buffer->allocate();
     *descriptor = {
-      .type = DescriptorType::Function,
-      .function = {0},
+        .type = DescriptorType::Function,
+        .function = {0},
     };
+
     Value* result = value_buffer->allocate();
     *result = {
-      .descriptor = descriptor,
-      .operand = imm64(fn),
+        .descriptor = descriptor,
+        .operand = imm64(fn),
     };
 
     result->descriptor->function.return_value = C_function_return_value(descriptor_buffer, value_buffer, forward_declaration);
@@ -1160,9 +1194,12 @@ Value* C_function_value(DescriptorBuffer* descriptor_buffer, ValueBuffer* value_
 
     const char* start = ch;
     Descriptor* argument_descriptor = 0;
-    for (; *ch; ++ch) {
-        if (*ch == ',' || *ch == ')') {
-            if (start != ch) {
+    for (; *ch; ++ch)
+    {
+        if (*ch == ',' || *ch == ')')
+        {
+            if (start != ch)
+            {
                 argument_descriptor = C_parse_type(descriptor_buffer, start, ch);
                 assert(argument_descriptor);
             }
@@ -1170,17 +1207,21 @@ Value* C_function_value(DescriptorBuffer* descriptor_buffer, ValueBuffer* value_
         }
     }
 
-    if (argument_descriptor && argument_descriptor->type != DescriptorType::Void) {
+    if (argument_descriptor && argument_descriptor->type != DescriptorType::Void)
+    {
         Value* arg = value_buffer->allocate();
         arg->descriptor = argument_descriptor;
         // FIXME should not use a hardcoded register here
+#ifdef RNS_OS_WINDOWS
         arg->operand = reg.rcx;
-
+#else
+#error
+#endif
         result->descriptor->function.arg_list = arg;
         result->descriptor->function.arg_count = 1;
     }
 
-    return (result);
+    return result;
 }
 
 using InstructionBlock = Buffer<Instruction>;
@@ -1468,8 +1509,6 @@ void encode_instruction(FunctionBuilder* fn_builder, Instruction instruction)
     bool is_reg = encoding.options.type == InstructionOptionType::Reg;
     bool need_mod_rm = is_digit || is_reg || r_m_encoding || memory_encoding;
 
-    u64 offset_of_displacement = 0;
-    u32 stack_size = 0;
     u8 register_or_digit = 0;
     u8 r_m = 0;
     u8 mod = 0;
@@ -1513,7 +1552,7 @@ void encode_instruction(FunctionBuilder* fn_builder, Instruction instruction)
                 {
                     mod = static_cast<u8>(Mod::Displacement_32);
                     r_m = static_cast<u8>(operand.indirect.reg);
-                    need_sib = operand.indirect.reg == get_stack_register();
+                    encoding_stack_operand = need_sib = operand.indirect.reg == get_stack_register();
 
                     if (need_sib)
                     {
@@ -1588,20 +1627,41 @@ void encode_instruction(FunctionBuilder* fn_builder, Instruction instruction)
                             fn_builder->eb->append((s8)op.indirect.displacement);
                             break;
                         case Mod::Displacement_32:
-                            if (need_sib)
+                        {
+                            s32 displacement = op.indirect.displacement;
+                            if (encoding_stack_operand)
                             {
-                                offset_of_displacement = fn_builder->eb->len;
-                                stack_size = static_cast<u8>(op.size);
-                                assert(fn_builder->stack_displacement_count < MAX_DISPLACEMENT_COUNT);
-                                s32* location = (s32*)(fn_builder->eb->ptr + offset_of_displacement);
-                                fn_builder->stack_displacements[fn_builder->stack_displacement_count] = {
-                                    .location = location,
-                                    .size = stack_size,
-                                };
-                                fn_builder->stack_displacement_count++;
+                                if (displacement < 0)
+                                {
+                                    displacement += static_cast<s32>(fn_builder->stack_offset);
+                                }
+                                else
+                                {
+                                    if (displacement >= fn_builder->max_call_parameter_stack_size)
+                                    {
+                                        s32 return_address_size = 8;
+                                        displacement += static_cast<s32>(fn_builder->stack_offset) + return_address_size;
+                                    }
+                                }
                             }
-                            fn_builder->eb->append(op.indirect.displacement);
-                            break;
+                            switch ((Mod)mod)
+                            {
+                                case Mod::Displacement_32:
+                                {
+                                    fn_builder->eb->append(displacement);
+                                } break;
+                                case Mod::Displacement_8:
+                                {
+                                    fn_builder->eb->append((s8)displacement);
+                                } break;
+                                case Mod::NoDisplacement:
+                                    break;
+                                default:
+                                {
+                                    RNS_UNREACHABLE;
+                                } break;
+                            }
+                        } break;
                         default:
                             break;
                     }
@@ -1737,11 +1797,8 @@ FunctionBuilder fn_begin(Allocator* allocator, ValueBuffer* value_buffer, Descri
         .instruction_buffer = InstructionBuffer::create(allocator, max_instruction_count),
         .descriptor = descriptor,
         .eb = execution_buffer,
-        .stack_displacements = new(allocator) StackPatch[MAX_DISPLACEMENT_COUNT],
         .epilogue_label = label(allocator, OperandSize::Bits_32),
     };
-
-    assert(fn_builder.stack_displacements);
 
     u64 code_address = u64(fn_builder.eb->ptr + fn_builder.eb->len);
     
@@ -2041,17 +2098,15 @@ bool fn_is_frozen(FunctionBuilder* fn_builder)
 
 void fn_end(FunctionBuilder* fn_builder)
 {
-    //assert(!fn_is_frozen(fn_builder));
-    // @MSVC
-    s32 stack_size;
-
     switch (calling_convention)
     {
         case CallingConvention::MSVC:
         {
             s8 alignment = 0x8;
             fn_builder->stack_offset += fn_builder->max_call_parameter_stack_size;
-            stack_size = (s32)align(fn_builder->stack_offset, 16) + alignment;
+            fn_builder->stack_offset = align(fn_builder->stack_offset, 16) + alignment;
+            assert(fn_builder->stack_offset >= INT32_MIN && fn_builder->stack_offset <= INT32_MAX);
+            s32 stack_size = static_cast<s32>(fn_builder->stack_offset);
             if (stack_size >= INT8_MIN && stack_size <= INT8_MAX)
             {
                 encode_instruction(fn_builder, { sub, { reg.rsp, imm8((s8)stack_size) } });
@@ -2070,11 +2125,8 @@ void fn_end(FunctionBuilder* fn_builder)
             break;
     }
 
-    u64* instruction_index_offset = new u64[fn_builder->instruction_buffer.len];
-
     for (auto i = 0; i < fn_builder->instruction_buffer.len; i++)
     {
-        instruction_index_offset[i] = (u64)(fn_builder->eb->ptr + fn_builder->eb->len);
         auto instruction = fn_builder->instruction_buffer.ptr[i];
         encode_instruction(fn_builder, instruction);
     }
@@ -2083,24 +2135,8 @@ void fn_end(FunctionBuilder* fn_builder)
     {
         case CallingConvention::MSVC:
         {
-            for (s64 i = 0; i < fn_builder->stack_displacement_count; i++)
-            {
-                StackPatch* patch = &fn_builder->stack_displacements[i];
-                s32 displacement = *patch->location;
-                if (displacement < 0)
-                {
-                    *patch->location = stack_size + displacement;
-                }
-                else if (displacement >= (s32)fn_builder->max_call_parameter_stack_size)
-                {
-                    s8 return_address_size = 8;
-                    *patch->location = stack_size + displacement + return_address_size;
-                }
-            }
-
             encode_instruction(fn_builder, { .label = fn_builder->epilogue_label });
-
-            encode_instruction(fn_builder, { add, { reg.rsp, imm32(stack_size) } });
+            encode_instruction(fn_builder, { add, { reg.rsp, imm32(static_cast<s32>(fn_builder->stack_offset)) } });
             encode_instruction(fn_builder, { ret });
         } break;
         case CallingConvention::SystemV:
@@ -3380,6 +3416,48 @@ TestEncodingFn(test_large_size_return)
     return fn_result;
 }
 
+TestEncodingFn(test_shared_library)
+{
+    // @TODO: move to a more fitting and robust option
+    auto global_buffer = GlobalBuffer::create(general_allocator, 128);
+
+    HINSTANCE kernel32 = LoadLibraryA("kernel32.dll");
+    if (!kernel32)
+    {
+        return false;
+    }
+    INT_PTR GetStdHandle_dll = reinterpret_cast<INT_PTR>(GetProcAddress(kernel32, "GetStdHandle"));
+    if (!GetStdHandle_dll)
+    {
+        return false;
+    }
+    auto* GetStdHandle_value = C_function_value(descriptor_buffer, value_buffer, "s64 GetStdHandle(s32)", (u64)GetStdHandle);
+
+    auto* global = global_value(&global_buffer, value_buffer, GetStdHandle_value->descriptor);
+    {
+        if (global->operand.type != OperandType::RIP_relative)
+        {
+            auto* address = (u64*)global->operand.imm64;
+            *address = GetStdHandle_dll;
+        }
+    }
+
+    auto checker_fn = fn_begin(general_allocator, value_buffer, descriptor_buffer, execution_buffer);
+    {
+        auto* arg = s32_value(value_buffer, STD_INPUT_HANDLE);
+        auto* call = call_function_value(descriptor_buffer, value_buffer, &checker_fn, GetStdHandle_value, &arg, 1);
+        fn_return(value_buffer, &checker_fn, call);
+        fn_end(&checker_fn);
+    }
+    
+    auto our_get_std_handle = value_as_function(checker_fn.value, RetS64ParamVoid);
+    auto result = our_get_std_handle();
+    auto expected = (s64)(GetStdHandle(STD_INPUT_HANDLE));
+    bool fn_result = result == expected;
+
+    return fn_result;
+}
+
 struct TestFunctionArgs
 {
     Allocator* general_allocator;
@@ -3478,6 +3556,7 @@ void wna_main(s32 argc, char* argv[])
         def_test_case(test_tagged_unions),
         def_test_case(test_hello_world_lea),
         def_test_case(test_large_size_return),
+        def_test_case(test_shared_library),
     };
 
     auto test_suite = TestSuite::create(args, test_cases, rns_array_length(test_cases));
