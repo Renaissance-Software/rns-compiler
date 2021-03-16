@@ -12,7 +12,6 @@
 #include "parser.h"
 #include "bytecode.h"
 #include "interpreter.h"
-#include "pe32.h"
 #include "x86_64.h"
 
 #include "file.h"
@@ -52,9 +51,5 @@ s32 rns_main(s32 argc, char* argv[])
 
     interpret(&ir);
 
-    //write_executable();
-
-    wna_main(argc, argv);
-
-    return 0;
+    return wna_main(argc, argv);
 }
