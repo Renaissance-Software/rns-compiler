@@ -19,36 +19,36 @@ const InstructionEncoding adc_encoding[] =
         OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_A, 64), OP(Immediate, 32))),
         )),
     ENCODING(OP_CODE(0x80), ENC_OPTS(Digit, .digit = 2), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8), OP(Immediate, 8))),
-        OP_COMB(.rex_byte = Rex::Rex, OPS(OP(Register_Or_Memory, 8), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8), OP(Immediate, 8))),
+        OP_COMB(.rex_byte = Rex::Rex, OPS(OP(RegisterOrMemory, 8), OP(Immediate, 8))),
     )),
     ENCODING(OP_CODE(0x81), ENC_OPTS(Digit, .digit = 2), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 32))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Immediate, 32))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 32))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Immediate, 32))),
         )),
     ENCODING(OP_CODE(0x83), ENC_OPTS(Digit, .digit = 2), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 8))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 8))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 8))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Immediate, 8))),
         )),
     ENCODING(OP_CODE(0x10), ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
         )),
     ENCODING(OP_CODE(0x11),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Register, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Register, 32))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Register, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Register, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Register, 32))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Register, 64))),
         )),
     ENCODING(OP_CODE(0x12),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
         )),
     ENCODING(OP_CODE(0x13),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register, 16), OP(Register_Or_Memory, 16))),
-        OP_COMB(OPS(OP(Register, 32), OP(Register_Or_Memory, 32))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register, 64), OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 16))),
+        OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 32))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register, 64), OP(RegisterOrMemory, 64))),
         )),
 };
 
@@ -64,36 +64,36 @@ const InstructionEncoding add_encoding[] =
         OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_A, 64), OP(Immediate, 32))),
     )),
     ENCODING(OP_CODE(0x80),ENC_OPTS(Digit, .digit = 0), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory,8), OP(Immediate, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register_Or_Memory,8), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory,8), OP(Immediate, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(RegisterOrMemory,8), OP(Immediate, 8))),
         )),
     ENCODING(OP_CODE(0x81),ENC_OPTS(Digit, .digit = 0), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 32))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Immediate, 32))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 32))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Immediate, 32))),
     )),
     ENCODING(OP_CODE(0x83),ENC_OPTS(Digit, .digit = 0), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 8))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 8))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 8))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Immediate, 8))),
     )),
     ENCODING(OP_CODE(0x00),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
     )),
     ENCODING(OP_CODE(0x01),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Register, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Register, 32))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Register, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Register, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Register, 32))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Register, 64))),
     )),
     ENCODING(OP_CODE(0x02),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
     )),
     ENCODING(OP_CODE(0x03),ENC_OPTS(Reg), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register, 16), OP(Register_Or_Memory, 16))),
-    	OP_COMB(OPS(OP(Register, 32), OP(Register_Or_Memory, 32))),
-    	OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register, 64), OP(Register_Or_Memory, 64))),
+    	OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 16))),
+    	OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 32))),
+    	OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register, 64), OP(RegisterOrMemory, 64))),
     )),
 };
 
@@ -126,7 +126,7 @@ const InstructionEncoding call_encoding[] =
     	OP_COMB(OPS(OP(Relative, 32))),
     )),
     ENCODING(OP_CODE(0xFF), ENC_OPTS(Digit, .digit = 2), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register_Or_Memory, 64))),
+    	OP_COMB(OPS(OP(RegisterOrMemory, 64))),
     )),
 };
 const InstructionEncoding cbw_encoding[] = { 0 };
@@ -155,36 +155,36 @@ const InstructionEncoding cmp_encoding[] =
     	OP_COMB(.rex_byte = Rex::W, OPS(OP(Register_A, 64), OP(Immediate, 32))),
     )),
     ENCODING(OP_CODE(0x80), ENC_OPTS(Digit, .digit = 7), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register_Or_Memory, 8), OP(Immediate, 8))),
-    	OP_COMB(.rex_byte = Rex::Rex, OPS(OP(Register_Or_Memory, 8), OP(Immediate, 8))),
+    	OP_COMB(OPS(OP(RegisterOrMemory, 8), OP(Immediate, 8))),
+    	OP_COMB(.rex_byte = Rex::Rex, OPS(OP(RegisterOrMemory, 8), OP(Immediate, 8))),
         )),
     ENCODING(OP_CODE(0x81), ENC_OPTS(Digit, .digit = 7), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 16))),
-    	OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 32))),
-    	OP_COMB(.rex_byte = Rex::W, OPS(OP(Register_Or_Memory, 64), OP(Immediate, 32))),
+    	OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 16))),
+    	OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 32))),
+    	OP_COMB(.rex_byte = Rex::W, OPS(OP(RegisterOrMemory, 64), OP(Immediate, 32))),
         )),
     ENCODING(OP_CODE(0x83), ENC_OPTS(Digit, .digit = 7), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 8))),
-    	OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 8))),
-    	OP_COMB(.rex_byte = Rex::W, OPS(OP(Register_Or_Memory, 64), OP(Immediate, 8))),
+    	OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 8))),
+    	OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 8))),
+    	OP_COMB(.rex_byte = Rex::W, OPS(OP(RegisterOrMemory, 64), OP(Immediate, 8))),
         )),
     ENCODING(OP_CODE(0x38), ENC_OPTS(Reg), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
-    	OP_COMB(.rex_byte = Rex::Rex, OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
+    	OP_COMB(OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
+    	OP_COMB(.rex_byte = Rex::Rex, OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
         )),
     ENCODING(OP_CODE(0x39), ENC_OPTS(Reg), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Register, 16))),
-    	OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Register, 32))),
-    	OP_COMB(.rex_byte = Rex::W, OPS(OP(Register_Or_Memory, 64), OP(Register, 64))),
+    	OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Register, 16))),
+    	OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Register, 32))),
+    	OP_COMB(.rex_byte = Rex::W, OPS(OP(RegisterOrMemory, 64), OP(Register, 64))),
         )),
     ENCODING(OP_CODE(0x3A), ENC_OPTS(Reg), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
-    	OP_COMB(.rex_byte = Rex::Rex, OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
+    	OP_COMB(OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
+    	OP_COMB(.rex_byte = Rex::Rex, OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
         )),
     ENCODING(OP_CODE(0x3B), ENC_OPTS(Reg), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register, 16), OP(Register_Or_Memory, 16))),
-    	OP_COMB(OPS(OP(Register, 32), OP(Register_Or_Memory, 32))),
-    	OP_COMB(.rex_byte = Rex::W, OPS(OP(Register, 64), OP(Register_Or_Memory, 64))),
+    	OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 16))),
+    	OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 32))),
+    	OP_COMB(.rex_byte = Rex::W, OPS(OP(Register, 64), OP(RegisterOrMemory, 64))),
         )),
 };
 
@@ -216,13 +216,13 @@ const InstructionEncoding dec_encoding[] = { 0 };
 const InstructionEncoding div__encoding[] =
 {
     ENCODING(OP_CODE(0xF6),ENC_OPTS(Digit, .digit = 6), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
     ENCODING(OP_CODE(0xF7),ENC_OPTS(Digit, .digit = 6), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(RegisterOrMemory, 64))),
     )),
 };
 
@@ -236,13 +236,13 @@ const InstructionEncoding hlt_encoding[] = { 0 };
 const InstructionEncoding idiv_encoding[] =
 {
     ENCODING(OP_CODE(0xF6),ENC_OPTS(Digit, .digit = 7), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
     ENCODING(OP_CODE(0xF7),ENC_OPTS(Digit, .digit = 7), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(RegisterOrMemory, 64))),
     )),
 };
 
@@ -250,27 +250,27 @@ const InstructionEncoding idiv_encoding[] =
 const InstructionEncoding imul_encoding[] =
 {
     ENCODING(OP_CODE(0xF6),ENC_OPTS(Digit, .digit = 5), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
     )),
     ENCODING(OP_CODE(0xF7),ENC_OPTS(Digit, .digit = 5), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(RegisterOrMemory, 64))),
     )),
     ENCODING(OP_CODE(0x0F, 0xAF), ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register, 16), OP(Register_Or_Memory, 16))),
-        OP_COMB(OPS(OP(Register, 32), OP(Register_Or_Memory, 32))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 16))),
+        OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 32))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(RegisterOrMemory, 64))),
     )),
     ENCODING(OP_CODE(0x6B), ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register, 16), OP(Register_Or_Memory, 16), OP(Immediate, 8))),
-        OP_COMB(OPS(OP(Register, 32), OP(Register_Or_Memory, 32), OP(Immediate, 8))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(Register_Or_Memory, 64), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 16), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 32), OP(Immediate, 8))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(RegisterOrMemory, 64), OP(Immediate, 8))),
     )),
     ENCODING(OP_CODE(0x69), ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register, 16), OP(Register_Or_Memory, 16), OP(Immediate, 16))),
-        OP_COMB(OPS(OP(Register, 32), OP(Register_Or_Memory, 32), OP(Immediate, 32))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(Register_Or_Memory, 64), OP(Immediate, 32))),
+        OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 16), OP(Immediate, 16))),
+        OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 32), OP(Immediate, 32))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(RegisterOrMemory, 64), OP(Immediate, 32))),
     )),
 };
 
@@ -279,13 +279,13 @@ const InstructionEncoding in_encoding[] = { 0 };
 const InstructionEncoding inc_encoding[] =
 {
     ENCODING(OP_CODE(0xFE), ENC_OPTS(Digit, .digit = 0), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,     OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,     OPS(OP(RegisterOrMemory, 8))),
     )),
     ENCODING(OP_CODE(0xFF), ENC_OPTS(Digit, .digit = 0), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(RegisterOrMemory, 64))),
     )),
     ENCODING(OP_CODE(0x40), ENC_OPTS(Reg), COMBINATIONS(
         OP_COMB(OPS(OP(Register, 16))),
@@ -295,6 +295,12 @@ const InstructionEncoding inc_encoding[] =
 
 const InstructionEncoding incssp_encoding[] = { 0 };
 const InstructionEncoding ins_encoding[] = { 0 };
+const InstructionEncoding int3_encoding[] =
+{
+    ENCODING(OP_CODE(0xCC), COMBINATIONS(
+        OP_COMB(),
+    )),
+};
 const InstructionEncoding int_encoding[] = { 0 };
 const InstructionEncoding invd_encoding[] = { 0 };
 const InstructionEncoding invlpg_encoding[] = { 0 };
@@ -593,7 +599,7 @@ const InstructionEncoding jmp_encoding[] =
         OP_COMB(OPS(OP(Relative, 32))),
     )),
     ENCODING(OP_CODE(0xFF), ENC_OPTS(Digit, .digit = 4), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 64))),
     )),
     // ... Jump far
 };
@@ -636,22 +642,22 @@ const InstructionEncoding mfence_encoding[] = { 0 };
 const InstructionEncoding mov_encoding[] =
 {
     ENCODING(OP_CODE(0x88), ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
     )),
     ENCODING(OP_CODE(0x89), ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Register, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Register, 32))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register_Or_Memory, 64), OP(Register, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Register, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Register, 32))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(RegisterOrMemory, 64), OP(Register, 64))),
     )),
     ENCODING(OP_CODE(0x8A), ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
     )),
     ENCODING(OP_CODE(0x8B), ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register, 16), OP(Register_Or_Memory, 16))),
-        OP_COMB(OPS(OP(Register, 32), OP(Register_Or_Memory, 32))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 16))),
+        OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 32))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(RegisterOrMemory, 64))),
     )),
     /*  @TODO: NOT CODED SEGMENT AND OFFSET INSTRUCTIONS */
     ENCODING(OP_CODE(0xB0), ENC_OPTS(OpCodePlusReg), COMBINATIONS(
@@ -664,13 +670,13 @@ const InstructionEncoding mov_encoding[] =
         OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(Immediate, 64))),
     )),
     ENCODING(OP_CODE(0xC6), ENC_OPTS(Digit, .digit = 0), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8), OP(Immediate, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8), OP(Immediate, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8), OP(Immediate, 8))),
     )),
     ENCODING(OP_CODE(0xC7), ENC_OPTS(Digit, .digit = 0), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 32))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register_Or_Memory, 64), OP(Immediate, 32))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 32))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(RegisterOrMemory, 64), OP(Immediate, 32))),
     )),
 };
 
@@ -682,20 +688,47 @@ const InstructionEncoding movdiri_encoding[] = { 0 };
 const InstructionEncoding movdir64b_encoding[] = { 0 };
 const InstructionEncoding movq_encoding[] = { 0 };
 const InstructionEncoding movs_encoding[] = { 0 };
-const InstructionEncoding movsx_encoding[] = { 0 };
-const InstructionEncoding movzx_encoding[] = { 0 };
+
+const InstructionEncoding movsx_encoding[] =
+{
+    ENCODING(OP_CODE(0x0F, 0xBE), ENC_OPTS(Reg), COMBINATIONS(
+        OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 8))),
+        OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(RegisterOrMemory, 8))),
+    )),
+    ENCODING(OP_CODE(0x0F, 0xBF), ENC_OPTS(Reg), COMBINATIONS(
+        OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 16))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(RegisterOrMemory, 16))),
+    )),
+    ENCODING(OP_CODE(0x63), ENC_OPTS(Reg), COMBINATIONS(
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register, 64), OP(RegisterOrMemory, 32))),
+    )),
+};
+
+const InstructionEncoding movzx_encoding[] =
+{
+    ENCODING(OP_CODE(0x0F, 0xB6), ENC_OPTS(Reg), COMBINATIONS(
+        OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 8))),
+        OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(RegisterOrMemory, 8))), // This one can be problematic, refer to manual
+    )),
+    ENCODING(OP_CODE(0x0F, 0xB7), ENC_OPTS(Reg), COMBINATIONS(
+        OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 16))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register, 64), OP(RegisterOrMemory, 16))),
+    )),
+};
 
 // Unsigned multiply
 const InstructionEncoding mul_encoding[] =
 {
     ENCODING(OP_CODE(0xF6), ENC_OPTS(Digit, .digit = 4), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,     OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,     OPS(OP(RegisterOrMemory, 8))),
     )),
     ENCODING(OP_CODE(0xF7), ENC_OPTS(Digit, .digit = 4), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32))),
-        OP_COMB(.rex_byte = Rex::W,     OPS(OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32))),
+        OP_COMB(.rex_byte = Rex::W,     OPS(OP(RegisterOrMemory, 64))),
     )),
 };
 
@@ -717,8 +750,8 @@ const InstructionEncoding pop_encoding[] =
         OP_COMB(OPS(OP(Register, 64))),
     )),
     ENCODING(OP_CODE(0x8f), ENC_OPTS(Digit, .digit = 0), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 64))),
     )),
     ENCODING(OP_CODE(0x6A),  COMBINATIONS(
         OP_COMB(OPS(OP(Immediate, 8))),
@@ -747,8 +780,8 @@ const InstructionEncoding push_encoding[] =
         OP_COMB(OPS(OP(Register, 64))),
     )),
     ENCODING(OP_CODE(0xff), ENC_OPTS(Digit, .digit = 6), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 64))),
     )),
     ENCODING(OP_CODE(0x6A),  COMBINATIONS(
         OP_COMB(OPS(OP(Immediate, 8))),
@@ -811,240 +844,240 @@ const InstructionEncoding scas_encoding[] = { 0 };
 const InstructionEncoding seta_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x97), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setae_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x93), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setb_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x92), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setbe_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x96), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setc_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x92), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding sete_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x94), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setg_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9F), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setge_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9D), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setl_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9C), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setle_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9E), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setna_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x96), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setnae_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x92), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setnb_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x93), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setnbe_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x97), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setnc_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x97), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setne_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x95), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setng_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9E), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setnge_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9C), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setnl_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9D), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setnle_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9F), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setno_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x91), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setnp_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9B), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setns_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x99), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setnz_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x95), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding seto_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x90), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setp_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9A), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setpe_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9A), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setpo_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x9B), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding sets_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x98), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
 const InstructionEncoding setz_encoding[] =
 {
     ENCODING(OP_CODE(0x0F, 0x94), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,      OPS(OP(RegisterOrMemory, 8))),
     )),
 };
 
@@ -1074,36 +1107,36 @@ const InstructionEncoding sub_encoding[] =
         OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_A, 64), OP(Immediate, 32))),
     )),
     ENCODING(OP_CODE(0x80),ENC_OPTS(Digit, .digit = 5), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory,8), OP(Immediate, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register_Or_Memory,8), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory,8), OP(Immediate, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(RegisterOrMemory,8), OP(Immediate, 8))),
         )),
     ENCODING(OP_CODE(0x81),ENC_OPTS(Digit, .digit = 5), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 32))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Immediate, 32))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 32))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Immediate, 32))),
     )),
     ENCODING(OP_CODE(0x83),ENC_OPTS(Digit, .digit = 5), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 8))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 8))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 8))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Immediate, 8))),
     )),
     ENCODING(OP_CODE(0x28),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
     )),
     ENCODING(OP_CODE(0x29),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Register, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Register, 32))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Register, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Register, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Register, 32))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Register, 64))),
     )),
     ENCODING(OP_CODE(0x2A),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
     )),
     ENCODING(OP_CODE(0x2B),ENC_OPTS(Reg), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register, 16), OP(Register_Or_Memory, 16))),
-    	OP_COMB(OPS(OP(Register, 32), OP(Register_Or_Memory, 32))),
-    	OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register, 64), OP(Register_Or_Memory, 64))),
+    	OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 16))),
+    	OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 32))),
+    	OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register, 64), OP(RegisterOrMemory, 64))),
     )),
 };
 
@@ -1147,36 +1180,36 @@ const InstructionEncoding xor__encoding[] =
         OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_A, 64), OP(Immediate, 32))),
     )),
     ENCODING(OP_CODE(0x80),ENC_OPTS(Digit, .digit = 6), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory,8), OP(Immediate, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register_Or_Memory,8), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory,8), OP(Immediate, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(RegisterOrMemory,8), OP(Immediate, 8))),
         )),
     ENCODING(OP_CODE(0x81),ENC_OPTS(Digit, .digit = 6), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 32))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Immediate, 32))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 32))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Immediate, 32))),
     )),
     ENCODING(OP_CODE(0x83),ENC_OPTS(Digit, .digit = 6), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Immediate, 8))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Immediate, 8))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Immediate, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Immediate, 8))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Immediate, 8))),
     )),
     ENCODING(OP_CODE(0x30),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register_Or_Memory, 8), OP(Register, 8))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(RegisterOrMemory, 8), OP(Register, 8))),
     )),
     ENCODING(OP_CODE(0x31),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register_Or_Memory, 16), OP(Register, 16))),
-        OP_COMB(OPS(OP(Register_Or_Memory, 32), OP(Register, 32))),
-        OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register_Or_Memory, 64), OP(Register, 64))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 16), OP(Register, 16))),
+        OP_COMB(OPS(OP(RegisterOrMemory, 32), OP(Register, 32))),
+        OP_COMB(.rex_byte = Rex::W,   OPS(OP(RegisterOrMemory, 64), OP(Register, 64))),
     )),
     ENCODING(OP_CODE(0x32),ENC_OPTS(Reg), COMBINATIONS(
-        OP_COMB(OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
-        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register, 8), OP(Register_Or_Memory, 8))),
+        OP_COMB(OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
+        OP_COMB(.rex_byte = Rex::Rex,    OPS(OP(Register, 8), OP(RegisterOrMemory, 8))),
     )),
     ENCODING(OP_CODE(0x33),ENC_OPTS(Reg), COMBINATIONS(
-    	OP_COMB(OPS(OP(Register, 16), OP(Register_Or_Memory, 16))),
-    	OP_COMB(OPS(OP(Register, 32), OP(Register_Or_Memory, 32))),
-    	OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register, 64), OP(Register_Or_Memory, 64))),
+    	OP_COMB(OPS(OP(Register, 16), OP(RegisterOrMemory, 16))),
+    	OP_COMB(OPS(OP(Register, 32), OP(RegisterOrMemory, 32))),
+    	OP_COMB(.rex_byte = Rex::W,   OPS(OP(Register, 64), OP(RegisterOrMemory, 64))),
     )),
 };
 
@@ -1204,6 +1237,7 @@ define_mnemonic(div_);
 define_mnemonic(idiv);
 define_mnemonic(imul);
 define_mnemonic(inc);
+define_mnemonic(int3);
 
 define_mnemonic(jmp);
 

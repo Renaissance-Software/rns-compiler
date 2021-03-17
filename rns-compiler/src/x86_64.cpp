@@ -253,7 +253,7 @@ struct OperandMemoryDirect
 
 struct OperandRIPRelative
 {
-    u64 address;
+    s64 offset;
 };
 
 const u32 max_label_location_count = 32;
@@ -488,7 +488,7 @@ enum class OperandEncodingType : u8
     None = 0,
     Register,
     Register_A,
-    Register_Or_Memory,
+    RegisterOrMemory,
     Relative,
     Memory,
     Immediate,
@@ -549,22 +549,21 @@ struct Instruction
     MetaContext context;
 };
 
-struct ImportNameTo_RVA
+struct ImportSymbol
 {
     const char* name;
-    struct
-    {
-        u32 name;
-        u32 IAT;
-    } RVA;
+    u32 name_RVA;
+    u32 offset_in_data;
 };
 
-using ImportFunctionBuffer = Buffer<ImportNameTo_RVA>;
+using ImportSymbolBuffer = Buffer<ImportSymbol>;
 
 struct ImportLibrary
 {
-    ImportFunctionBuffer symbols;
-    ImportNameTo_RVA dll;
+    ImportSymbolBuffer symbols;
+    const char* name;
+    u32 name_RVA;
+    u32 RVA;
     u32 image_thunk_RVA;
 };
 
@@ -585,7 +584,7 @@ struct BufferU8 : public Buffer<u8>
         return buffer;
     }
 
-    void* allocate_bytes(s64 bytes)
+    u8* allocate_bytes(s64 bytes)
     {
         assert(len + bytes <= cap);
         auto* result =  &ptr[len];
@@ -657,7 +656,8 @@ struct Program
     ImportLibraryBuffer import_libraries;
     FunctionBuilder* entry_point;
     FunctionBuilderBuffer functions;
-    s32 code_base_RVA;
+    s64 code_base_RVA;
+    s64 data_base_RVA;
 };
 
 struct JIT
@@ -1004,7 +1004,6 @@ static inline Operand rel(Label* label)
     return relative;
 }
 
-
 //static inline Operand rel8(u8 value)
 //{
 //    Operand operand = {
@@ -1046,12 +1045,12 @@ static inline Operand rel(Label* label)
 //}
 //
 
-static inline Operand rip_rel(u64 address)
+static inline Operand rip_rel(s64 address)
 {
     return {
         .type = OperandType::RIP_Relative,
         .size = static_cast<u32>(OperandSize::Bits_64),
-        .rip_rel{.address = address},
+        .rip_rel{.offset = address},
     };
 }
 
@@ -1105,22 +1104,45 @@ static inline Operand get_reg(Size reg_size_, Reg reg_index_)
     return operand;
 }
 
+void* RIP_value_pointer(Program* program, Value* value)
+{
+    assert(value->operand.type == OperandType::RIP_Relative);
+    return program->data.ptr + value->operand.rip_rel.offset;
+}
+
 static inline Value* global_value(GlobalBuffer* global_buffer, ValueBuffer* value_buffer, Descriptor* descriptor)
 {
     auto value_size = descriptor_size(descriptor);
-    auto* global_allocated_blob = global_buffer->allocate_bytes(value_size);
-
+    auto* data_section_allocation = global_buffer->allocate_bytes(value_size);
+    s64 offset_in_data_section = data_section_allocation - global_buffer->ptr;
+    
     auto* value = value_buffer->allocate();
     *value = {
         .descriptor = descriptor,
         .operand = {
             .type = OperandType::RIP_Relative,
             .size = static_cast<u32>(value_size),
-            .imm64 = (u64)global_allocated_blob,
+            .rip_rel {.offset = offset_in_data_section },
         },
     };
 
     return value;
+}
+
+Value* global_value_C_string(ValueBuffer* value_buffer, DescriptorBuffer* descriptor_buffer, Program* program, const char* str)
+{
+    auto length = strlen(str) + 1;
+
+    Descriptor* descriptor = descriptor_buffer->allocate();
+    *descriptor = {
+        .type = DescriptorType::FixedSizeArray,
+        .fixed_size_array = {.data = &descriptor_u8, .len = (s64)length },
+    };
+
+    Value* string_value = global_value(&program->data, value_buffer, descriptor);
+    memcpy(RIP_value_pointer(program, string_value), str, length);
+
+    return string_value;
 }
 
 static inline Value* reg_value(ValueBuffer* value_buffer, Register reg, const Descriptor* descriptor)
@@ -1141,6 +1163,41 @@ static inline Value* reg_value(ValueBuffer* value_buffer, Register reg, const De
 
     return (result);
 }
+
+Value* arg_value(ValueBuffer* value_buffer, DescriptorFunction* function, Descriptor* arg_descriptor, u32 arg_index)
+{
+    auto size = descriptor_size(arg_descriptor);
+    assert(size <= 8);
+
+    if (arg_index < rns_array_length(parameter_registers))
+    {
+        function->arg_list.append(*reg_value(value_buffer, parameter_registers[arg_index], arg_descriptor));
+    }
+    else
+    {
+        switch (calling_convention)
+        {
+            case CallingConvention::MSVC:
+            {
+                auto offset = arg_index * 8;
+                auto operand = stack(offset, size);
+
+                function->arg_list.append({
+                    .descriptor = arg_descriptor,
+                    .operand = operand,
+                });
+                break;
+            }
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
+        }
+    }
+
+    assert(arg_index == function->arg_list.len - 1);
+    return &function->arg_list.ptr[arg_index];
+}
+
 
 static inline Value* s32_value(ValueBuffer* value_buffer, s32 v)
 {
@@ -1281,7 +1338,9 @@ Descriptor* C_function_descriptor(Allocator* allocator, DescriptorBuffer* descri
     Descriptor* descriptor = descriptor_buffer->allocate();
     *descriptor = {
         .type = DescriptorType::Function,
-        .function = {0},
+        .function = {
+            .arg_list = ValueBuffer::create(allocator, 16),
+        }
     };
 
 
@@ -1292,31 +1351,27 @@ Descriptor* C_function_descriptor(Allocator* allocator, DescriptorBuffer* descri
     ch++;
 
     const char* start = ch;
-    Descriptor* argument_descriptor = 0;
-    for (; *ch; ++ch)
+    Descriptor* arg_descriptor = nullptr;
+    for (auto arg_index = 0; *ch; ++ch)
     {
         if (*ch == ',' || *ch == ')')
         {
             if (start != ch)
             {
-                argument_descriptor = C_parse_type(descriptor_buffer, start, ch);
-                assert(argument_descriptor);
+                arg_descriptor = C_parse_type(descriptor_buffer, start, ch);
+                assert(arg_descriptor);
+
+                if (arg_index == 0 && arg_descriptor->type == DescriptorType::Void)
+                {
+                    assert(*ch == ')');
+                    break;
+                }
+
+                arg_value(value_buffer, &descriptor->function, arg_descriptor, arg_index);
+                ++arg_index;
             }
             start = ch + 1;
         }
-    }
-
-    if (argument_descriptor && argument_descriptor->type != DescriptorType::Void)
-    {
-        descriptor->function.arg_list = ValueBuffer::create(allocator, 16);
-        Value* arg = descriptor->function.arg_list.allocate();
-        arg->descriptor = argument_descriptor;
-        // FIXME should not use a hardcoded register here
-#ifdef RNS_OS_WINDOWS
-        arg->operand = reg.rcx;
-#else
-#error
-#endif
     }
 
     return descriptor;
@@ -1340,7 +1395,7 @@ Operand import_symbol(Allocator* general_allocator, Program* program, const char
     for (auto i = 0; i < program->import_libraries.len; i++)
     {
         ImportLibrary* lib = &program->import_libraries.ptr[i];
-        if (strcmp(lib->dll.name, library_name) == 0)
+        if (_stricmp(lib->name, library_name) == 0)
         {
             library = lib;
             break;
@@ -1350,17 +1405,19 @@ Operand import_symbol(Allocator* general_allocator, Program* program, const char
     if (!library)
     {
         library = program->import_libraries.append({
-            .symbols = ImportFunctionBuffer::create(general_allocator, 16),
-            .dll = {.name = library_name, .RVA = {.name = 0xCCCCCCCC, .IAT = 0xCCCCCCCC } },
+            .symbols = ImportSymbolBuffer::create(general_allocator, 16),
+            .name = library_name,
+            .name_RVA = 0xcccccccc,
+            .RVA = 0xcccccccc,
             .image_thunk_RVA = 0xcccccccc,
             });
     }
 
-    ImportNameTo_RVA* symbol = nullptr;
+    ImportSymbol* symbol = nullptr;
 
     for (auto i = 0; i < library->symbols.len; i++)
     {
-        ImportNameTo_RVA* sym = &library->symbols.ptr[i];
+        auto* sym = &library->symbols.ptr[i];
         if (strcmp(sym->name, symbol_name) == 0)
         {
             symbol = sym;
@@ -1369,7 +1426,7 @@ Operand import_symbol(Allocator* general_allocator, Program* program, const char
 
     if (!symbol)
     {
-        library->symbols.append({ .name = symbol_name, .RVA = {.name = 0xcccccccc, .IAT = 0xcccccccc } });
+        library->symbols.append({ .name = symbol_name, .name_RVA = 0xccccccc, .offset_in_data = 0 });
     }
 
     Operand operand = {
@@ -1410,13 +1467,13 @@ Value* C_function_import(Allocator* allocator, DescriptorBuffer* descriptor_buff
     return result;
 }
 
-ImportNameTo_RVA* find_import(Program* program, const char* library_name, const char* symbol_name)
+ImportSymbol* find_import(Program* program, const char* library_name, const char* symbol_name)
 {
     for (auto i = 0; i < program->import_libraries.len; i++)
     {
         auto* lib = &program->import_libraries.ptr[i];
 
-        if (strcmp(lib->dll.name, library_name) != 0)
+        if (_stricmp(lib->name, library_name) != 0)
         {
             continue;
         }
@@ -1473,7 +1530,7 @@ bool find_encoding(Instruction instruction, u32* encoding_index, u32* combinatio
                         {
                             continue;
                         }
-                        if (operand_encoding.type == OperandEncodingType::Register_Or_Memory && (u32)operand_encoding.size == operand.size)
+                        if (operand_encoding.type == OperandEncodingType::RegisterOrMemory && (u32)operand_encoding.size == operand.size)
                         {
                             continue;
                         }
@@ -1485,7 +1542,7 @@ bool find_encoding(Instruction instruction, u32* encoding_index, u32* combinatio
                         }
                         break;
                     case OperandType::MemoryIndirect:
-                        if (operand_encoding.type == OperandEncodingType::Register_Or_Memory)
+                        if (operand_encoding.type == OperandEncodingType::RegisterOrMemory)
                         {
                             continue;
                         }
@@ -1505,7 +1562,7 @@ bool find_encoding(Instruction instruction, u32* encoding_index, u32* combinatio
                         }
                         break;
                     case OperandType::RIP_Relative:
-                        if (operand_encoding.type == OperandEncodingType::Register_Or_Memory)
+                        if (operand_encoding.type == OperandEncodingType::RegisterOrMemory)
                         {
                             continue;
                         }
@@ -1515,7 +1572,7 @@ bool find_encoding(Instruction instruction, u32* encoding_index, u32* combinatio
                         }
                         break;
                     case OperandType::Import_RIP_Relative:
-                        if (operand_encoding.type == OperandEncodingType::Register_Or_Memory)
+                        if (operand_encoding.type == OperandEncodingType::RegisterOrMemory)
                         {
                             continue;
                         }
@@ -1585,6 +1642,10 @@ bool typecheck(const Descriptor* a, const Descriptor* b)
                 return true;
             }
             if (b->pointer_to->type == DescriptorType::FixedSizeArray && typecheck(b->pointer_to->fixed_size_array.data, a->pointer_to))
+            {
+                return true;
+            }
+            if (a->pointer_to->type == DescriptorType::Void || b->pointer_to->type == DescriptorType::Void)
             {
                 return true;
             }
@@ -1661,7 +1722,7 @@ void encode_instruction(BufferU8* buffer, FunctionBuilder* fn_builder, Instructi
                 rex_byte |= (u8)Rex::B;
             }
         }
-        else if (op_encoding.type == OperandEncodingType::Register_Or_Memory)
+        else if (op_encoding.type == OperandEncodingType::RegisterOrMemory)
         {
             r_m_encoding = true;
         }
@@ -1807,6 +1868,7 @@ void encode_instruction(BufferU8* buffer, FunctionBuilder* fn_builder, Instructi
             switch (op.type)
             {
                 case OperandType::MemoryIndirect:
+                {
                     switch ((Mod)mod)
                     {
                         case Mod::Displacement_8:
@@ -1851,7 +1913,7 @@ void encode_instruction(BufferU8* buffer, FunctionBuilder* fn_builder, Instructi
                         default:
                             break;
                     }
-                    break;
+                } break;
                 case OperandType::Import_RIP_Relative:
                 {
                     Program* program = fn_builder->program;
@@ -1862,7 +1924,7 @@ void encode_instruction(BufferU8* buffer, FunctionBuilder* fn_builder, Instructi
                     for (auto i = 0; i < program->import_libraries.len; i++)
                     {
                         auto* lib = &program->import_libraries.ptr[i];
-                        if (strcmp(lib->dll.name, op.import_rip_rel.library_name) != 0)
+                        if (_stricmp(lib->name, op.import_rip_rel.library_name) != 0)
                         {
                             continue;
                         }
@@ -1873,7 +1935,7 @@ void encode_instruction(BufferU8* buffer, FunctionBuilder* fn_builder, Instructi
 
                             if (strcmp(fn->name, op.import_rip_rel.symbol_name) == 0)
                             {
-                                s64 diff = fn->RVA.IAT - next_instruction_RVA;
+                                s64 diff = program->data_base_RVA + fn->offset_in_data - next_instruction_RVA;
                                 assert(fits_into(diff, sizeof(s32), true));
                                 s32 displacement = (s32)diff;
 
@@ -1889,12 +1951,13 @@ void encode_instruction(BufferU8* buffer, FunctionBuilder* fn_builder, Instructi
                 } break;
                 case OperandType::RIP_Relative:
                 {
-                    u64 start_address = (u64)buffer->ptr;
-                    u64 end_address = start_address + buffer->cap;
-                    u64 next_instruction_address = start_address + buffer->len + sizeof(s32);
-                    s64 displacement = op.rip_rel.address - next_instruction_address;
-                    assert(fits_into(displacement, sizeof(s32), true));
-                    buffer->append((s32)displacement);
+                    Program* program = fn_builder->program;
+                    s64 next_instruction_RVA = program->code_base_RVA + buffer->len + sizeof(s32);
+                    s64 operand_RVA = program->data_base_RVA + op.rip_rel.offset;
+                    s64 diff = operand_RVA - next_instruction_RVA;
+                    assert(fits_into(diff, sizeof(s32), true));
+                    s32 displacement = (s32)diff;
+                    buffer->append(displacement);
                     break;
                 }
                 default:
@@ -2191,7 +2254,6 @@ void move_value(ValueBuffer* value_buffer, FunctionBuilder* fn_builder, const Va
     }
    
 #if 1
-    // @TODO: Maybe this is wrong?
     if (a_size != b_size)
     {
         if (!(b->operand.type == OperandType::Immediate && b_size == sizeof(s32) && a_size == sizeof(s64)))
@@ -2199,52 +2261,7 @@ void move_value(ValueBuffer* value_buffer, FunctionBuilder* fn_builder, const Va
             assert(!"Mismatched operand size when moving");
         }
     }
-    // This doesn't work
 #else
-
-    if (b_size == 1 && (a_size >= 2 && a_size <= 8))
-    {
-        assert(a->operand.type == OperandType::Register);
-        Value* zero = s64_value(value_buffer, 0);
-        zero->descriptor = a->descriptor;
-
-        move_value(value_buffer, fn_builder, a, zero);
-        fn_builder->instruction_buffer.append({ mov, {a->operand, b->operand} });
-
-        // @TODO: use movsx
-        //fn_builder->instruction_buffer.append({ movsx, {a->operand, b->operand} });
-
-        return;
-    }
-
-    if (a->operand.type == OperandType::Register && b->operand.type == OperandType::Immediate)
-    {
-        bool operand_immediate_0 = false;
-        switch (b->operand.size)
-        {
-            case 1:
-                operand_immediate_0 = b->operand.imm8 == 0;
-                break;
-            case 2:
-                operand_immediate_0 = b->operand.imm16 == 0;
-                break;
-            case 4:
-                operand_immediate_0 = b->operand.imm32 == 0;
-                break;
-            case 8:
-                operand_immediate_0 = b->operand.imm64 == 0;
-                break;
-            default:
-                RNS_NOT_IMPLEMENTED;
-                break;
-        }
-
-        if (operand_immediate_0)
-        {
-            fn_builder->instruction_buffer.append({ xor_, {a->operand, a->operand} });
-            return;
-        }
-    }
 #endif
 
     if ((a->operand.type != OperandType::Register && b->operand.type == OperandType::Immediate && b_size == (u32)OperandSize::Bits_64) || (a->operand.type == OperandType::MemoryIndirect && b->operand.type == OperandType::MemoryIndirect))
@@ -2273,12 +2290,6 @@ Value* fn_reflect(ValueBuffer* value_buffer,  FunctionBuilder* fn_builder, Descr
     move_value(value_buffer, fn_builder, result, (s64_value(value_buffer, descriptor->struct_.field_count)));
 
     return (result);
-}
-
-
-void fn_update_result(FunctionBuilder* fn_builder)
-{
-    fn_builder->descriptor->function.arg_list.len = fn_builder->next_arg;
 }
 
 void fn_ensure_frozen(DescriptorFunction* function)
@@ -2339,6 +2350,8 @@ void fn_encode(BufferU8* buffer, FunctionBuilder* fn_builder)
             RNS_NOT_IMPLEMENTED;
             break;
     }
+
+    encode_instruction(buffer, fn_builder, { int3 });
 }
 
 void fn_end(FunctionBuilder* fn_builder)
@@ -2384,9 +2397,27 @@ JIT jit_end(Allocator* virtual_allocator, Program* program)
         .data = program->data,
     };
 
-    s64 diff = result.code.ptr - result.data.ptr;
-    assert(diff >= INT32_MIN && diff <= INT32_MAX);
-    program->code_base_RVA = (s32)diff;
+    program->code_base_RVA = (s64)result.code.ptr;
+    program->data_base_RVA = (s64)result.data.ptr;
+
+    for (auto i = 0; i < program->import_libraries.len; i++)
+    {
+        auto* lib = &program->import_libraries.ptr[i];
+        HINSTANCE dll_handle = LoadLibraryA(lib->name);
+        assert(dll_handle);
+
+        for (auto i = 0; i < lib->symbols.len; i++)
+        {
+            auto* fn = &lib->symbols.ptr[i];
+            auto fn_address = (u64)GetProcAddress(dll_handle, fn->name);
+            assert(fn_address);
+
+            s64 offset = program->data.len;
+            program->data.append(fn_address);
+            assert(fits_into(offset, sizeof(s32), true));
+            fn->offset_in_data = (s32)offset;
+        }
+    }
 
     for (auto i = 0; i < program->functions.len; i++)
     {
@@ -2399,39 +2430,15 @@ JIT jit_end(Allocator* virtual_allocator, Program* program)
 
 Value* fn_arg(ValueBuffer* value_buffer, FunctionBuilder* fn_builder, Descriptor* arg_descriptor)
 {
-    assert(descriptor_size(arg_descriptor) <= 8);
-    Descriptor* descriptor = fn_builder->descriptor;
-    s64 arg_index = fn_builder->next_arg++;
+    assert(!fn_is_frozen(fn_builder));
+    auto arg_index = fn_builder->next_arg;
+    fn_builder->next_arg++;
     assert(arg_index < max_arg_count);
-    if (arg_index < rns_array_length(parameter_registers))
-    {
-        descriptor->function.arg_list.ptr[arg_index] = *reg_value(value_buffer, parameter_registers[arg_index], arg_descriptor);
-    }
-    else
-    {
-        switch (calling_convention)
-        {
-            case CallingConvention::MSVC:
-            {
-                s32 return_address_size = 8;
-                s64 arg_size = descriptor_size(arg_descriptor);
-                s64 offset = arg_index * 8;
 
-                descriptor->function.arg_list.ptr[arg_index] = {
-                    .descriptor = (Descriptor*)arg_descriptor,
-                    .operand = stack((s32)offset, (s32)arg_size),
-                };
-                break;
-            }
-            default:
-                RNS_NOT_IMPLEMENTED;
-                break;
-        }
-    }
+    auto* function = &fn_builder->descriptor->function;
+    auto* result = arg_value(value_buffer, function, arg_descriptor, arg_index);
 
-    fn_update_result(fn_builder);
-
-    return (&descriptor->function.arg_list.ptr[arg_index]);
+    return result;
 };
 
 void fn_return(ValueBuffer* value_buffer, FunctionBuilder* fn_builder, Value* to_return)
@@ -2462,8 +2469,6 @@ void fn_return(ValueBuffer* value_buffer, FunctionBuilder* fn_builder, Value* to
     }
 
     fn_builder->instruction_buffer.append({ jmp, { rel(fn_builder->epilogue_label) } }, METACONTEXT);
-
-    (void)fn_update_result(fn_builder);
 }
 
 u64 helper_value_as_function(Value* value)
@@ -2546,6 +2551,11 @@ Value* call_function_value(DescriptorBuffer* descriptor_buffer, ValueBuffer* val
     for (Value* fn_overload = fn; fn_overload; fn_overload = fn_overload->descriptor->function.next_overload)
     {
         DescriptorFunction* descriptor = &fn_overload->descriptor->function;
+        if (arg_count != descriptor->arg_list.len)
+        {
+            continue;
+        }
+
         bool match = true;
 
         for (s64 arg_index = 0; arg_index < arg_count; arg_index++)
@@ -3182,6 +3192,7 @@ TestEncodingFn(test_type_checker)
     bool result = typecheck(&descriptor_s32, &descriptor_s32);
     result = result && !typecheck(&descriptor_s32, &descriptor_s16);
     result = result && !typecheck(&descriptor_s64, descriptor_pointer_to(descriptor_buffer, &descriptor_s64));
+    result = result && typecheck(descriptor_pointer_to(descriptor_buffer, &descriptor_s64), descriptor_pointer_to(descriptor_buffer, &descriptor_void));
     result = result && !typecheck(descriptor_array_of(descriptor_buffer, &descriptor_s32, 2), descriptor_array_of(descriptor_buffer, &descriptor_s32, 3));
     if (!result)
     {
@@ -3425,7 +3436,7 @@ TestEncodingFn(test_rip_addressing_mode)
             return false;
         }
 
-        s32* address = reinterpret_cast<s32*>(global_a->operand.imm64);
+        auto* address = (s32*)RIP_value_pointer(program, global_a);
         *address = a;
     }
     Value* global_b = global_value(&program->data, value_buffer, &descriptor_s32);
@@ -3435,7 +3446,7 @@ TestEncodingFn(test_rip_addressing_mode)
             return false;
         }
 
-        s32* address = reinterpret_cast<s32*>(global_b->operand.imm64);
+        auto* address = (s32*)RIP_value_pointer(program, global_b);
         *address = b;
     }
 
@@ -3656,31 +3667,6 @@ TestEncodingFn(test_large_size_return)
 TestEncodingFn(test_shared_library)
 {
     auto* GetStdHandle_value = C_function_import(general_allocator, descriptor_buffer, value_buffer, program, "kernel32.dll", "s64 GetStdHandle(s32)");
-    assert(GetStdHandle_value);
-    auto kernel32 = LoadLibraryA(GetStdHandle_value->operand.import_rip_rel.library_name);
-    if (!kernel32)
-    {
-        return false;
-    }
-    INT_PTR GetStdHandle_dll = reinterpret_cast<INT_PTR>(GetProcAddress(kernel32, GetStdHandle_value->operand.import_rip_rel.symbol_name));
-    if (!GetStdHandle_dll)
-    {
-        return false;
-    }
-
-    auto* global = global_value(&program->data, value_buffer, GetStdHandle_value->descriptor);
-    u64* address = (u64*)global->operand.imm64;
-    *address = GetStdHandle_dll;
-
-    auto* program_import = find_import(program, GetStdHandle_value->operand.import_rip_rel.library_name, GetStdHandle_value->operand.import_rip_rel.symbol_name);
-    if (!program_import)
-    {
-        return false;
-    }
-
-    auto iat_rva = (s64)((u8*)address - program->data.ptr);
-    assert(iat_rva >= INT32_MIN && iat_rva <= INT32_MAX);
-    program_import->RVA.IAT = (s32)iat_rva;
 
     auto checker_fn = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     {
@@ -3760,12 +3746,13 @@ Encoded_RDATA_Section encode_rdata_section(Allocator* allocator, Program* progra
 {
     #define get_rva() (s32)(header->VirtualAddress + buffer->len)
 
-    u64 expected_encoded_size = 0;
+    s64 expected_encoded_size = 0;
+    program->data_base_RVA = header->VirtualAddress;
 
     for (auto i = 0; i < program->import_libraries.len; i++)
     {
         auto* lib = &program->import_libraries.ptr[i];
-        expected_encoded_size += align(strlen(lib->dll.name) + 1, 2);
+        expected_encoded_size += align(strlen(lib->name) + 1, 2);
 
         for (auto i = 0; i < lib->symbols.len; i++)
         {
@@ -3794,11 +3781,17 @@ Encoded_RDATA_Section encode_rdata_section(Allocator* allocator, Program* progra
         expected_encoded_size += sizeof(IMAGE_IMPORT_DESCRIPTOR);
     }
 
+    auto global_data_size = align(program->data.len, 16);
+    expected_encoded_size += global_data_size;
+
     Encoded_RDATA_Section result = {
         .buffer = BufferU8::create(allocator, expected_encoded_size),
     };
 
     auto* buffer = &result.buffer;
+
+    auto* global_data = buffer->allocate_bytes(global_data_size);
+    memcpy(global_data, program->data.ptr, program->data.len);
 
     for (auto i = 0; i < program->import_libraries.len; i++)
     {
@@ -3808,7 +3801,7 @@ Encoded_RDATA_Section encode_rdata_section(Allocator* allocator, Program* progra
         {
             auto* symbol = &lib->symbols.ptr[i];
 
-            symbol->RVA.name = get_rva();
+            symbol->name_RVA = get_rva();
             buffer->append((s16)0);
             auto name_size = strlen(symbol->name) + 1;
             auto aligned_name_size = align(name_size, 2);
@@ -3819,15 +3812,15 @@ Encoded_RDATA_Section encode_rdata_section(Allocator* allocator, Program* progra
     result.IAT_RVA = get_rva();
     for (auto i = 0; i < program->import_libraries.len; i++)
     {
-        ImportLibrary* lib = &program->import_libraries.ptr[i];
-        lib->dll.RVA.IAT = get_rva();
+        auto* lib = &program->import_libraries.ptr[i];
+        lib->RVA  = get_rva();
         
         for (auto i = 0; i < lib->symbols.len; i++)
         {
             auto* symbol = &lib->symbols.ptr[i];
 
-            symbol->RVA.IAT = get_rva();
-            buffer->append((u64)symbol->RVA.IAT);
+            symbol->offset_in_data = get_rva() - header->VirtualAddress;
+            buffer->append((u64)symbol->offset_in_data);
         }
 
         buffer->append((u64)0);
@@ -3843,7 +3836,7 @@ Encoded_RDATA_Section encode_rdata_section(Allocator* allocator, Program* progra
         for (auto i = 0; i < lib->symbols.len; i++)
         {
             auto* symbol = &lib->symbols.ptr[i];
-            buffer->append((u64)symbol->RVA.name);
+            buffer->append((u64)symbol->name_RVA);
         }
 
         buffer->append((u64)0);
@@ -3853,11 +3846,11 @@ Encoded_RDATA_Section encode_rdata_section(Allocator* allocator, Program* progra
     for (auto i = 0; i < program->import_libraries.len; i++)
     {
         ImportLibrary* lib = &program->import_libraries.ptr[i];
-        lib->dll.RVA.name = get_rva();
-        auto name_size = strlen(lib->dll.name) + 1;
+        lib->name_RVA = get_rva();
+        auto name_size = strlen(lib->name) + 1;
         auto aligned_name_size = align(name_size, 2);
 
-        memcpy(buffer->allocate_bytes(aligned_name_size), lib->dll.name, name_size);
+        memcpy(buffer->allocate_bytes(aligned_name_size), lib->name, name_size);
     }
 
     // Import directory
@@ -3869,8 +3862,8 @@ Encoded_RDATA_Section encode_rdata_section(Allocator* allocator, Program* progra
 
         buffer->append(IMAGE_IMPORT_DESCRIPTOR{
                 .OriginalFirstThunk = lib->image_thunk_RVA,
-                .Name = lib->dll.RVA.name,
-                .FirstThunk = lib->dll.RVA.IAT,
+                .Name = lib->name_RVA,
+                .FirstThunk = lib->RVA
             });
     }
 
@@ -3878,7 +3871,7 @@ Encoded_RDATA_Section encode_rdata_section(Allocator* allocator, Program* progra
 
     buffer->append(IMAGE_IMPORT_DESCRIPTOR{});
 
-    assert(buffer->len == expected_encoded_size);
+    assert(buffer->len <= expected_encoded_size);
     assert(fits_into(buffer->len, sizeof(s32), true));
 
     header->Misc.VirtualSize = (u32)buffer->len;
@@ -3925,7 +3918,7 @@ EncodedTextSection encode_text_section(Allocator* general_allocator, Program* pr
 #undef get_rva
 }
 
-void write_executable(Allocator* general_allocator, Program* program)
+void write_executable(Allocator* general_allocator, Program* program, const char* exe_name)
 {
     IMAGE_SECTION_HEADER sections[] =
     {
@@ -4030,7 +4023,7 @@ void write_executable(Allocator* general_allocator, Program* program)
     file_buffer.len = text_section_header->PointerToRawData + text_section_header->SizeOfRawData;
 
     {
-        auto file_handle = CreateFileA("test.exe", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        auto file_handle = CreateFileA(exe_name, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
         assert(file_handle != INVALID_HANDLE_VALUE);
 
         DWORD bytes_written = 0;
@@ -4039,9 +4032,8 @@ void write_executable(Allocator* general_allocator, Program* program)
     }
 }
 
-TestEncodingFn(test_write_executable)
+TestEncodingFn(test_write_minimal_executable)
 {
-
     Value* ExitProcess_value = C_function_import(general_allocator, descriptor_buffer, value_buffer, program, "kernel32.dll", "s64 ExitProcess(s32)");
 
     auto* my_exit = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
@@ -4049,13 +4041,38 @@ TestEncodingFn(test_write_executable)
     call_function_value(descriptor_buffer, value_buffer, my_exit, ExitProcess_value, &exit_code_value, 1);
     fn_end(my_exit);
 
-
     auto* main = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     program->entry_point = main;
     auto* call_value = call_function_value(descriptor_buffer, value_buffer, main, my_exit->value, nullptr, 0);
     fn_end(main);
 
-    write_executable(general_allocator, program);
+    write_executable(general_allocator, program, "minimal.exe");
+
+    return true;
+}
+
+TestEncodingFn(test_write_hello_world_executable)
+{
+    Value* GetStdHandle_value = C_function_import(general_allocator, descriptor_buffer, value_buffer, program, "kernel32.dll", "s64 GetStdHandle(s32)");
+    Value* STDOUT_HANDLE_value = s32_value(value_buffer, STD_OUTPUT_HANDLE);
+    Value* ExitProcess_value = C_function_import(general_allocator, descriptor_buffer, value_buffer, program, "kernel32.dll", "s64 ExitProcess(s32)");
+    Value* WriteFile_value = C_function_import(general_allocator, descriptor_buffer, value_buffer, program, "kernel32.dll", "s32 WriteFile(s64, void*, s32, void*, s64)");
+
+    auto* main_fn = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
+    program->entry_point = main_fn;
+    auto* handle = call_function_value(descriptor_buffer, value_buffer, main_fn, GetStdHandle_value, &STDOUT_HANDLE_value, 1);
+    auto* bytes_written = Stack(value_buffer, main_fn, &descriptor_s32, s32_value(value_buffer, 0));
+    auto* bytes_written_ptr = pointer_value(value_buffer, descriptor_buffer, main_fn, bytes_written);
+    auto* message_bytes = global_value_C_string(value_buffer, descriptor_buffer, program, "Hello world!");
+    auto* message_ptr = pointer_value(value_buffer, descriptor_buffer, main_fn, message_bytes);
+
+    Value* args[] = { handle, message_ptr, s32_value(value_buffer, static_cast<s32>(message_bytes->descriptor->fixed_size_array.len)), bytes_written_ptr, s64_value(value_buffer, 0) };
+    call_function_value(descriptor_buffer, value_buffer, main_fn, WriteFile_value, args, rns_array_length(args));
+    auto* exit_code = s32_value(value_buffer, 0);
+    call_function_value(descriptor_buffer, value_buffer, main_fn, ExitProcess_value, &exit_code, 1);
+    fn_end(main_fn);
+
+    write_executable(general_allocator, program, "hello_world.exe");
 
     return true;
 }
@@ -4114,18 +4131,7 @@ struct TestSuite
         auto tests_run = i + bool(test_case_count != i);
         printf("Tests passed: %u. Tests failed: %u. Tests run: %u. Total tests: %u\n", passed_test_case_count, tests_run - passed_test_case_count, tests_run, test_case_count);
 
-        DebugAllocator execution_allocator = DebugAllocator::create(virtual_alloc(nullptr, 1024 * 1024, { .commit = 1, .reserve = 1, .execute = 1, .read = 1, .write = 1 }), 1024 * 1024);
-        GlobalBuffer global_buffer = GlobalBuffer::create(args.general_allocator, 1024);
-        auto execution_buffer = ExecutionBuffer::create(&execution_allocator, execution_allocator.pool.cap);
-        Program test_executable = { .data = global_buffer, .import_libraries = ImportLibraryBuffer::create(args.general_allocator, 16), .entry_point = {}, };
-        args.program = &test_executable;
-        args.program->functions = FunctionBuilderBuffer::create(args.general_allocator, test_case_count * 2);
-        bool test_executable_ok = test_write_executable(args.general_allocator, nullptr, args.value_buffer, args.descriptor_buffer, args.program);
-        if (!test_executable_ok)
-        {
-            printf("Executable writing failed!\n");
-        }
-        return passed_test_case_count == test_case_count && test_executable_ok;
+        return passed_test_case_count == test_case_count;
     }
 };
 
@@ -4182,6 +4188,8 @@ s32 wna_main(s32 argc, char* argv[])
         def_test_case(test_hello_world_lea),
         def_test_case(test_large_size_return),
         def_test_case(test_shared_library),
+        def_test_case(test_write_minimal_executable),
+        def_test_case(test_write_hello_world_executable),
     };
 
     auto test_suite = TestSuite::create(args, test_cases, rns_array_length(test_cases));
