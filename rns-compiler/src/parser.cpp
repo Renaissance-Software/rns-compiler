@@ -292,6 +292,7 @@ NodeList parse_block(ModuleParser* m, bool allow_no_braces)
 {
     NodeList list = {};
     bool has_braces = m->tp.expect_and_consume('{');
+
     const u8 expected_end = '}';
     if (!has_braces && !allow_no_braces)
     {
@@ -396,7 +397,8 @@ u32 parse_function(ModuleParser* m)
     if (m->tp.expect('-'))
     {
         m->tp.consume();
-        assert(m->tp.expect_and_consume('>'));
+        auto* expected = m->tp.expect_and_consume('>');
+        assert(expected);
         // @TODO: parse complex type
         Token* token;
         if (token = m->tp.expect_and_consume(TokenID::NativeType))

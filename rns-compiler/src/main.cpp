@@ -20,6 +20,13 @@ using namespace RNS;
 
 s32 rns_main(s32 argc, char* argv[])
 {
+#ifndef RNS_DEBUG
+    s64 freq;
+    QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
+    s64 start, end;
+    QueryPerformanceCounter((LARGE_INTEGER*)&start);
+#endif
+
     DebugAllocator lexer_allocator = create_allocator(RNS_MEGABYTE(100));
     DebugAllocator name_allocator = create_allocator(RNS_MEGABYTE(20));
 
@@ -35,21 +42,31 @@ s32 rns_main(s32 argc, char* argv[])
         printf("Parsing failed! Error: %s\n", module_parser.error_message);
         return -1;
     }
-    else
-    {
-        printf("Parsing finished successfully!\n");
-    }
 
-    DebugAllocator instruction_allocator = create_allocator(RNS_MEGABYTE(300));
-    DebugAllocator value_allocator = create_allocator(RNS_MEGABYTE(300));
-    Bytecode::IR ir = generate_ir(&module_parser, &instruction_allocator, &value_allocator);
-    //for (auto i = 0; i < ir.ib.len; i++)
-    //{
-    //    auto instruction = ir.ib.ptr[i];
-    //    instruction.print(&ir.vb);
-    //}
+    //DebugAllocator instruction_allocator = create_allocator(RNS_MEGABYTE(300));
+    //DebugAllocator value_allocator = create_allocator(RNS_MEGABYTE(300));
+    //Bytecode::IR ir = generate_ir(&module_parser, &instruction_allocator, &value_allocator);
+    ////for (auto i = 0; i < ir.ib.len; i++)
+    ////{
+    ////    auto instruction = ir.ib.ptr[i];
+    ////    instruction.print(&ir.vb);
+    ////}
 
-    interpret(&ir);
+    //interpret(&ir);
 
-    return wna_main(argc, argv);
+    //jit_bytecode(&ir);
+
+    DebugAllocator ir_allocator = create_allocator(RNS_MEGABYTE(300));
+    auto wasm_result = WASMBC::encode(&module_parser, &ir_allocator);
+    jit_wasm(&wasm_result.ib, &wasm_result.encoder);
+
+#ifndef RNS_DEBUG
+    QueryPerformanceCounter((LARGE_INTEGER*)&end);
+    auto diff = end - start;
+    auto us = 1000000;
+    auto diff_us = diff * us;
+    auto time_us = (double)diff_us / (double)freq;
+    printf("Time: %Lf us\n", time_us);
+#endif
+    return 0;
 }

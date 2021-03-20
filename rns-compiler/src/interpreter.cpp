@@ -38,12 +38,12 @@ s32 resolve_index(Bytecode::IR* ir, Interp::Runtime* runtime, s64 index)
         return variable->value;
     }
 
-    auto value = ir->vb.get(index);
+    auto* value = ir->vb.get(index);
 
-    switch (value.type)
+    switch (value->type)
     {
         case NativeTypeID::S32:
-            return (s32)value.int_lit.lit;
+            return (s32)value->int_lit.lit;
         default:
             RNS_NOT_IMPLEMENTED;
             return 0;

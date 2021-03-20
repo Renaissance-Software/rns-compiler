@@ -645,9 +645,9 @@ namespace Bytecode
             return index;
         }
 
-        inline Value get(s64 id)
+        inline Value* get(s64 id)
         {
-            return ptr[id];
+            return &ptr[id];
         }
     };
 
@@ -656,8 +656,8 @@ namespace Bytecode
         PrintBuffer bf;
         if (id != Bytecode::no_value)
         {
-            Value v = vb->get(id);
-            bf = v.to_string(id);
+            Value* v = vb->get(id);
+            bf = v->to_string(id);
         }
         else
         {
@@ -730,5 +730,4 @@ namespace Bytecode
         InstructionBuffer ib;
         ValueBuffer vb;
     };
-
 }
