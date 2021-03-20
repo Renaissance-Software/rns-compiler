@@ -27,7 +27,6 @@
   <ItemGroup>
     <ClInclude Include="src\bytecode.h" />
     <ClInclude Include="src\compiler_types.h" />
-    <ClInclude Include="src\file.h" />
     <ClInclude Include="src\interpreter.h" />
     <ClInclude Include="src\lexer.h" />
     <ClInclude Include="src\parser.h" />

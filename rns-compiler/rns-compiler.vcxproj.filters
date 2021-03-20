@@ -11,7 +11,6 @@
     <ClCompile Include="src\x86_64.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\file.h" />
     <ClInclude Include="src\lexer.h" />
     <ClInclude Include="src\parser.h" />
     <ClInclude Include="src\bytecode.h" />

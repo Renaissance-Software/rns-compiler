@@ -66,6 +66,7 @@ case ' ': \
 case '\n'
 
 #define SymbolEnd \
+case '\n': \
 case ' ': \
 case ',': \
 case ':': \
