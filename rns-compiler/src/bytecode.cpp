@@ -301,6 +301,12 @@ namespace WASMBC
                         auto sum_id = local_set();
                         return sum_id;
                     }
+                    case Lexer::BinOp::Minus:
+                    {
+                        instr(Instruction::i32_sub);
+                        auto sub_id = local_set();
+                        return sub_id;
+                    }
                     case Lexer::BinOp::None:
                         RNS_UNREACHABLE;
                     default:
@@ -611,5 +617,112 @@ namespace WASMBC
                 return nullptr;
 #undef rns_instr_case_to_str
         }
+    }
+}
+
+namespace LLVMIR
+{
+    using ID = u32;
+    const u32 no_value = 0xcccccccc;
+    enum class Instruction
+    {
+
+    };
+    enum class Type
+    {
+
+    };
+    
+    enum class OperandType
+    {
+        Literal,
+    };
+    struct Operand
+    {
+        OperandType operand_type;
+        union
+        {
+            u32 lit;
+        };
+    };
+
+    struct InstructionStruct
+    {
+        ID index;
+        Instruction id;
+        Type type;
+        // @TODO: we can omit alignment for now
+    };
+
+    using namespace RNS;
+    using InstructionBuffer = Buffer<InstructionStruct>;
+
+    struct Encoder
+    {
+        ModuleParser* parser;
+        InstructionBuffer* instructions;
+        u32 alloca_count;
+
+        void process_node_id(u32 node_id)
+        {
+            auto* node = parser->nb.get(node_id);
+            auto node_type = node->type;
+
+            switch (node_type)
+            {
+                case NodeType::VarDecl:
+                {
+
+                }
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+        }
+
+        void encode(Allocator* allocator, ModuleParser* parser, InstructionBuffer* instructions, Node* node)
+        {
+            assert(node);
+            assert(node->type == NodeType::Function);
+
+            this->parser = parser;
+            this->instructions = instructions;
+
+            alloca_count = 0;
+
+            for (auto node_id : node->function_decl.statements)
+            {
+                auto* node = parser->nb.get(node_id);
+                auto node_type = node->type;
+
+                if (node_type == NodeType::VarDecl)
+                {
+                    auto var_type_node_id = node->var_decl.type;
+                    auto* var_type_node = parser->nb.get(var_type_node_id);
+                }
+            }
+
+            for (auto node_id : node->function_decl.statements)
+            {
+                process_node_id(node_id);
+            }
+        }
+    };
+
+    void encode(ModuleParser* module_parser, Allocator* allocator)
+    {
+        assert(module_parser->tldb.len == 1);
+        InstructionBuffer instructions = InstructionBuffer::create(allocator, 1024);
+        Encoder encoder;
+        for (auto i = 0; i < module_parser->tldb.len; i++)
+        {
+            u32 tld_id = module_parser->tldb.ptr[i];
+            Node* tld_node = module_parser->nb.get(tld_id);
+            assert(tld_node);
+            assert(tld_node->type == NodeType::Function);
+            encoder.encode(allocator, module_parser, &instructions, tld_node);
+        }
+
+        //return { instructions, encoder };
     }
 }

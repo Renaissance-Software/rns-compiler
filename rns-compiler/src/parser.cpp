@@ -160,7 +160,7 @@ u32 parse_right_expression(ModuleParser* m, u32* left_expr)
             Node* scope_node = m->nb.get(m->current_scope);
             assert(scope_node);
             assert(scope_node->type == NodeType::Function);
-            scope_node->function_decl.variables.variable_append(var_decl_index);
+            scope_node->function_decl.variables.append(var_decl_index);
 
             return var_decl_index;
         }

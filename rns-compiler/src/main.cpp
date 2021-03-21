@@ -5,16 +5,29 @@
 #include <RNS/os_internal.h>
 #include <RNS/data_structures.h>
 
+#define USE_LLVM 0
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "lexer.h"
 #include "parser.h"
 #include "bytecode.h"
+#if USE_LLVM
+#include "llvm_backend.h"
+#endif
 #include "interpreter.h"
 #include "x86_64.h"
 
 using namespace RNS;
+
+enum class CompilerIR
+{
+    WASM,
+    LLVM_CUSTOM,
+#if USE_LLVM
+    LLVM,
+#endif
+};
 
 s32 rns_main(s32 argc, char* argv[])
 {
@@ -58,22 +71,29 @@ s32 rns_main(s32 argc, char* argv[])
         return -1;
     }
 
-    //DebugAllocator instruction_allocator = create_allocator(RNS_MEGABYTE(300));
-    //DebugAllocator value_allocator = create_allocator(RNS_MEGABYTE(300));
-    //Bytecode::IR ir = generate_ir(&module_parser, &instruction_allocator, &value_allocator);
-    ////for (auto i = 0; i < ir.ib.len; i++)
-    ////{
-    ////    auto instruction = ir.ib.ptr[i];
-    ////    instruction.print(&ir.vb);
-    ////}
-
-    //interpret(&ir);
-
-    //jit_bytecode(&ir);
-
     DebugAllocator ir_allocator = create_allocator(RNS_MEGABYTE(300));
-    auto wasm_result = WASMBC::encode(&module_parser, &ir_allocator);
-    jit_wasm(&wasm_result.ib, &wasm_result.encoder);
+
+#if USE_LLVM
+    CompilerIR compiler_ir = CompilerIR::LLVM;
+    LLVM::encode(&module_parser, &ir_allocator);
+#else
+    CompilerIR compiler_ir = CompilerIR::LLVM_CUSTOM;
+    switch (compiler_ir)
+    {
+        case CompilerIR::WASM:
+        {
+            auto wasm_result = WASMBC::encode(&module_parser, &ir_allocator);
+            jit_wasm(&wasm_result.ib, &wasm_result.encoder);
+        } break;
+        case CompilerIR::LLVM_CUSTOM:
+        {
+            LLVMIR::encode(&module_parser, &ir_allocator);
+        } break;
+        default:
+            RNS_UNREACHABLE;
+            break;
+    }
+#endif
 
 #ifndef RNS_DEBUG
     QueryPerformanceCounter((LARGE_INTEGER*)&end);

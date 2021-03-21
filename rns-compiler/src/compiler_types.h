@@ -318,9 +318,15 @@ namespace Parser
                         return BinOp::Assign;
                     }
                 case TokenID::Plus:
+                {
                     consume();
                     return BinOp::Plus;
+                }
                 case TokenID::Minus:
+                {
+                    consume();
+                    return BinOp::Minus;
+                }
                 case TokenID::Asterisk:
                 case TokenID::Slash:
                     // single char
@@ -396,20 +402,7 @@ namespace Parser
         u32 value;
     };
 
-    struct NodeList
-    {
-        u32* ptr;
-        s64 len;
-        s64 cap;
-
-        s64 variable_append(u32 node_id)
-        {
-            assert(len + 1 < cap);
-            s64 index = len++;
-            ptr[index] = node_id;
-            return index;
-        }
-    };
+    using NodeList = RNS::Buffer<u32>;
 
     struct Struct
     {

@@ -108,3 +108,7 @@ namespace WASMBC {
     };
     Result encode(Parser::ModuleParser* module_parser, RNS::Allocator* allocator);
 }
+namespace LLVMIR
+{
+    void encode(Parser::ModuleParser* module_parser, RNS::Allocator* allocator);
+}
