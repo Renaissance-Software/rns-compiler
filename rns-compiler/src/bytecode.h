@@ -2,10 +2,16 @@
 #include <RNS/types.h>
 #include "compiler_types.h"
 
-Bytecode::IR generate_ir(Parser::ModuleParser* m, RNS::Allocator* instruction_allocator, RNS::Allocator* value_allocator);
-namespace WASMBC {
-    extern const u32 no_value;
-    extern const u32 __stack_pointer;
+Bytecode::IR generate_ir(AST::Result* parser_result, RNS::Allocator* instruction_allocator, RNS::Allocator* value_allocator);
+namespace WASMBC
+{
+    struct InstructionStruct;
+    using WASM_ID = u32;
+    using InstructionBuffer = RNS::Buffer<InstructionStruct>;
+    using IDBuffer = RNS::Buffer<WASM_ID>;
+    extern const WASM_ID no_value;
+    extern const WASM_ID __stack_pointer;
+
     enum class Instruction : u8
     {
         unreachable = 0x00,
@@ -63,52 +69,21 @@ namespace WASMBC {
     struct InstructionStruct
     {
         Instruction id;
-        u32 value;
+        WASM_ID value;
 
         void print();
         const char* id_to_string();
     };
 
-    using InstructionBuffer = RNS::Buffer<InstructionStruct>;
-    using IDBuffer = RNS::Buffer<u32>;
-
-    struct ScopeStorage
-    {
-        IDBuffer node_id_buffer;
-        IDBuffer bc_id_buffer;
-        IDBuffer stack_offset;
-    };
-    struct FunctionEncoder
-    {
-        Parser::ModuleParser* parser;
-        InstructionBuffer* instructions;
-        u32 next_id;
-        u32 stack_size;
-        u32 stack_occupied;
-        u32 stack_pointer_id;
-        ScopeStorage scope_storage;
-
-        void stack_allocate(u32 size);
-        void instr(Instruction instruction, u32 value = no_value);
-        u32 process_statement(u32 node_id, NativeTypeID type = NativeTypeID::None);
-        NativeTypeID get_type(u32 type_node_id);
-        void scan_through_function(Parser::Node* node);
-        void print_instructions(s64 start = 0);
-        u32 find_size(NativeTypeID native_type);
-        void local_get(u32 index);
-        u32 local_set();
-        void local_set(u32 index);
-        void encode(RNS::Allocator* allocator, Parser::ModuleParser* parser, InstructionBuffer* instructions, Parser::Node* node);
-    };
-
     struct Result
     {
-        InstructionBuffer ib;
-        FunctionEncoder encoder;
+        WASMBC::InstructionBuffer ib;
+        WASM_ID stack_pointer_id;
     };
-    Result encode(Parser::ModuleParser* module_parser, RNS::Allocator* allocator);
+
+    Result encode(AST::Result* parser_result, RNS::Allocator* allocator);
 }
 namespace LLVMIR
 {
-    void encode(Parser::ModuleParser* module_parser, RNS::Allocator* allocator);
+    void encode(AST::Result* parser_result, RNS::Allocator* allocator);
 }

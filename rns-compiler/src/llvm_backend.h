@@ -4,5 +4,5 @@
 
 namespace LLVM
 {
-    void encode(Parser::ModuleParser* module_parser, RNS::Allocator* allocator);
+    void encode(Parser::Parser* module_parser, RNS::Allocator* allocator);
 }

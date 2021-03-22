@@ -316,7 +316,7 @@ struct DescriptorStruct
 {
     const char* name;
     struct DescriptorStructField* field_list;
-    s64 field_count;
+    s64 arg_count;
 };
 
 struct DescriptorTaggedUnion
@@ -345,17 +345,17 @@ s64 descriptor_size(const Descriptor* descriptor);
 
 s64 descriptor_struct_size(DescriptorStruct* descriptor)
 {
-    s64 field_count = descriptor->field_count;
-    assert(field_count);
+    s64 arg_count = descriptor->arg_count;
+    assert(arg_count);
     s64 alignment = 0;
     s64 raw_size = 0;
 
-    for (s64 i = 0; i < field_count; i++)
+    for (s64 i = 0; i < arg_count; i++)
     {
         DescriptorStructField* field = &descriptor->field_list[i];
         s64 field_size = descriptor_size(field->descriptor);
         alignment = max(alignment, field_size);
-        bool is_last_field = i == field_count - 1;
+        bool is_last_field = i == arg_count - 1;
         if (is_last_field)
         {
             raw_size = field->offset + field_size;
@@ -433,7 +433,7 @@ struct StructBuilderField
 struct StructBuilder
 {
     s64 offset;
-    s64 field_count;
+    s64 arg_count;
     StructBuilderField* field_list;
 };
 
@@ -691,7 +691,7 @@ Descriptor descriptor_void =
 // @Volatile @Reflection
 typedef struct DescriptorStructReflection
 {
-    s64 field_count;
+    s64 arg_count;
 } DescriptorStructReflection;
 
 DescriptorStructField struct_reflection_fields[] =
@@ -703,7 +703,7 @@ Descriptor descriptor_struct_reflection = {
     .type = DescriptorType::Struct,
     .struct_ = {
         .field_list = struct_reflection_fields,
-        .field_count = rns_array_length(struct_reflection_fields),
+        .arg_count = rns_array_length(struct_reflection_fields),
     },
 };
 
@@ -2250,7 +2250,7 @@ Value* fn_reflect(ValueBuffer* value_buffer,  FunctionBuilder* fn_builder, Descr
 {
     Value* result = stack_reserve(value_buffer, fn_builder, &descriptor_struct_reflection);
     assert(descriptor->type == DescriptorType::Struct);
-    move_value(value_buffer, fn_builder, result, (s64_value(value_buffer, descriptor->struct_.field_count)));
+    move_value(value_buffer, fn_builder, result, (s64_value(value_buffer, descriptor->struct_.arg_count)));
 
     return (result);
 }
@@ -2613,22 +2613,22 @@ DescriptorStructField* struct_add_field(StructBuilderFieldBuffer* struct_builder
     struct_builder->field_list = field;
 
     struct_builder->offset += size;
-    struct_builder->field_count++;
+    struct_builder->arg_count++;
 
     return &field->descriptor;
 }
 
 Descriptor* struct_end(Allocator* allocator, DescriptorBuffer* descriptor_buffer, StructBuilder* struct_builder)
 {
-    assert(struct_builder->field_count);
+    assert(struct_builder->arg_count);
 
     Descriptor* result = descriptor_buffer->allocate();
     assert(result);
 
-    DescriptorStructField* field_list = new(allocator)DescriptorStructField[struct_builder->field_count];
+    DescriptorStructField* field_list = new(allocator)DescriptorStructField[struct_builder->arg_count];
     assert(field_list);
 
-    u64 index = struct_builder->field_count - 1;
+    u64 index = struct_builder->arg_count - 1;
     for (StructBuilderField* field = struct_builder->field_list; field; field = field->next, index--)
     {
         field_list[index] = field->descriptor;
@@ -2637,7 +2637,7 @@ Descriptor* struct_end(Allocator* allocator, DescriptorBuffer* descriptor_buffer
     result->type = DescriptorType::Struct;
     result->struct_ = {
         .field_list = field_list,
-        .field_count = struct_builder->field_count,
+        .arg_count = struct_builder->arg_count,
     };
 
     return result;
@@ -2677,7 +2677,7 @@ Value* struct_get_field(Allocator* allocator, Value* raw_value, const char* name
     Descriptor* descriptor = struct_value->descriptor;
     assert(descriptor->type == DescriptorType::Struct);
 
-    for (s64 i = 0; i < descriptor->struct_.field_count; ++i)
+    for (s64 i = 0; i < descriptor->struct_.arg_count; ++i)
     {
         DescriptorStructField* field = &descriptor->struct_.field_list[i];
         if (strcmp(field->name, name) == 0)
@@ -3329,8 +3329,8 @@ TestEncodingFn(test_struct_reflection)
 
     auto* fn_builder = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
 
-    Value* field_count = fn_reflect(value_buffer, fn_builder, point_struct_descriptor);
-    auto* struct_ = Stack(value_buffer, fn_builder, &descriptor_struct_reflection, field_count);
+    Value* arg_count = fn_reflect(value_buffer, fn_builder, point_struct_descriptor);
+    auto* struct_ = Stack(value_buffer, fn_builder, &descriptor_struct_reflection, arg_count);
     auto* field = struct_get_field(general_allocator, struct_, "field_count");
     fn_return(value_buffer, fn_builder, field);
     fn_end(fn_builder);
@@ -3499,8 +3499,8 @@ TestEncodingFn(test_tagged_unions)
     };
 
     DescriptorStruct constructors[] = {
-        {.name = "None", .field_list = nullptr, .field_count = 0, },
-        {.name = "Some", .field_list = some_fields, .field_count = rns_array_length(some_fields), },
+        {.name = "None", .field_list = nullptr, .arg_count = 0, },
+        {.name = "Some", .field_list = some_fields, .arg_count = rns_array_length(some_fields), },
     };
 
     Descriptor option_s64_descriptor = {
@@ -3658,13 +3658,6 @@ using RNS::DebugAllocator;
     (static_cast<DWORD>(file_buffer.len) - (_section_header_)->PointerToRawData + (_section_header_)->VirtualAddress)
 
 
-RNS::DebugAllocator create_allocator(s64 size)
-{
-    void* address = RNS::virtual_alloc(nullptr, size, { .commit = 1, .reserve = 1, .execute = 0, .read = 1, .write = 1 });
-    assert(address);
-    RNS::DebugAllocator allocator = RNS::DebugAllocator::create(address, size);
-    return allocator;
-}
 
 struct PE32Constants
 {
@@ -4427,7 +4420,7 @@ struct WASM_JIT
     }
 };
 
-void jit_wasm(WASMInstructionBuffer* wasm_buffer, WASMBC::FunctionEncoder* encoder)
+void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stack_pointer_id)
 {
     DebugAllocator general_allocator = {};
     DebugAllocator virtual_allocator = {};
@@ -4450,7 +4443,7 @@ void jit_wasm(WASMInstructionBuffer* wasm_buffer, WASMBC::FunctionEncoder* encod
     GlobalBuffer global_buffer = GlobalBuffer::create(&general_allocator, 1024);
     Program program = { .data = global_buffer, .import_libraries = ImportLibraryBuffer::create(&general_allocator, 16), .entry_point = {}, };
     program.functions = FunctionBuilderBuffer::create(&general_allocator, 16);
-    WASM_JIT wasm_jit = WASM_JIT::create(&general_allocator, wasm_buffer);
+    WASM_JIT wasm_jit = WASM_JIT::create(&general_allocator, wasm_instructions);
 
     auto* main = fn_begin(&general_allocator, &value_buffer, &descriptor_buffer, &program);
 
@@ -4484,7 +4477,7 @@ void jit_wasm(WASMInstructionBuffer* wasm_buffer, WASMBC::FunctionEncoder* encod
             {
                 u32 value = instruction->value;
                 // stack operation
-                if (value == encoder->stack_pointer_id)
+                if (value == stack_pointer_id)
                 {
                     instruction = wasm_jit.get_next_instruction();
                     instr_id = instruction->id;

@@ -15,7 +15,6 @@
 #if USE_LLVM
 #include "llvm_backend.h"
 #endif
-#include "interpreter.h"
 #include "x86_64.h"
 
 using namespace RNS;
@@ -37,15 +36,16 @@ s32 rns_main(s32 argc, char* argv[])
     s64 start, end;
     QueryPerformanceCounter((LARGE_INTEGER*)&start);
 #endif
-    char buffer[1024];
-    RNS::get_cwd(buffer, 1024);
     if (argc < 2)
     {
         printf("Not enough arguments\n");
         return -1;
     }
+
     const char* filename = argv[1];
     assert(filename);
+
+    char error_message[1024]{};
 
     DebugAllocator file_allocator = create_allocator(RNS_MEGABYTE(1));
     auto file_buffer = RNS::file_load(filename, &file_allocator);
@@ -61,33 +61,40 @@ s32 rns_main(s32 argc, char* argv[])
     TokenBuffer tb = lex(&lexer_allocator, &name_allocator, file_buffer.ptr, static_cast<u32>(file_buffer.len));
 
     DebugAllocator node_allocator = create_allocator(RNS_MEGABYTE(200));
-    DebugAllocator node_id_allocator = create_allocator(RNS_MEGABYTE(100));
-    DebugAllocator tld_allocator = create_allocator(RNS_MEGABYTE(100));
+    DebugAllocator function_allocator = create_allocator(RNS_MEGABYTE(100));
+    DebugAllocator general_allocator = create_allocator(RNS_MEGABYTE(100));
 
-    Parser::ModuleParser module_parser = parse(&tb, &node_allocator, &node_id_allocator, &tld_allocator);
-    if (module_parser.failed())
+    auto parser_result = parse(&tb, &node_allocator, &function_allocator, &general_allocator, error_message);
+    if (parser_result.failed())
     {
-        printf("Parsing failed! Error: %s\n", module_parser.error_message);
+        printf("Parsing failed. Error message: %s\n", parser_result.error_message);
         return -1;
     }
 
+    DebugAllocator bc_allocator = create_allocator(RNS_MEGABYTE(100));
+    auto wasm_result = WASMBC::encode(&parser_result, &bc_allocator);
+
+    DebugAllocator mc_allocator = create_allocator(RNS_MEGABYTE(100));
+    jit_wasm(&wasm_result.ib, wasm_result.stack_pointer_id);
+
+#if 0
     DebugAllocator ir_allocator = create_allocator(RNS_MEGABYTE(300));
 
 #if USE_LLVM
     CompilerIR compiler_ir = CompilerIR::LLVM;
-    LLVM::encode(&module_parser, &ir_allocator);
+    LLVM::encode(&parser, &ir_allocator);
 #else
     CompilerIR compiler_ir = CompilerIR::LLVM_CUSTOM;
     switch (compiler_ir)
     {
         case CompilerIR::WASM:
         {
-            auto wasm_result = WASMBC::encode(&module_parser, &ir_allocator);
+            auto wasm_result = WASMBC::encode(&parser, &ir_allocator);
             jit_wasm(&wasm_result.ib, &wasm_result.encoder);
         } break;
         case CompilerIR::LLVM_CUSTOM:
         {
-            LLVMIR::encode(&module_parser, &ir_allocator);
+            LLVMIR::encode(&parser, &ir_allocator);
         } break;
         default:
             RNS_UNREACHABLE;
@@ -102,6 +109,7 @@ s32 rns_main(s32 argc, char* argv[])
     auto diff_us = diff * us;
     auto time_us = (double)diff_us / (double)freq;
     printf("Time: %Lf us\n", time_us);
+#endif
 #endif
     return 0;
 }

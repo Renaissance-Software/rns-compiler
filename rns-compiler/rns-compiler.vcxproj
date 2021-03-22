@@ -18,19 +18,15 @@
     <ClCompile Include="dependencies\rns-lib\lib\src\data_structures.cpp" />
     <ClCompile Include="dependencies\rns-lib\lib\src\os.cpp" />
     <ClCompile Include="src\bytecode.cpp" />
-    <ClCompile Include="src\interpreter.cpp" />
     <ClCompile Include="src\lexer.cpp" />
-    <ClCompile Include="src\llvm_backend.cpp" />
     <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="src\x86_64.cpp" />
     <ClCompile Include="src\parser.cpp" />
+    <ClCompile Include="src\x86_64.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\bytecode.h" />
     <ClInclude Include="src\compiler_types.h" />
-    <ClInclude Include="src\interpreter.h" />
     <ClInclude Include="src\lexer.h" />
-    <ClInclude Include="src\llvm_backend.h" />
     <ClInclude Include="src\parser.h" />
     <ClInclude Include="src\x86_64.h" />
     <ClInclude Include="src\x86_64_encoding.h" />
