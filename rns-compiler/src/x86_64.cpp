@@ -4801,6 +4801,12 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
                             break;
                     }
                 }
+#if 0
+                }
+                else
+                {
+                }
+#endif
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
