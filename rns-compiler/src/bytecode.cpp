@@ -286,7 +286,7 @@ namespace WASMBC
     {
         auto instruction_checkpoint = instructions->len;
         auto* instr = instructions->append({ instruction, value });
-        instr->print();
+        //instr->print();
         //print_instructions(instruction_checkpoint);
     }
 
