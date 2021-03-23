@@ -74,27 +74,22 @@ s32 rns_main(s32 argc, char* argv[])
     DebugAllocator bc_allocator = create_allocator(RNS_MEGABYTE(100));
     auto wasm_result = WASMBC::encode(&parser_result, &bc_allocator);
 
-    DebugAllocator mc_allocator = create_allocator(RNS_MEGABYTE(100));
-    jit_wasm(&wasm_result.ib, wasm_result.stack_pointer_id);
-
-#if 0
-    DebugAllocator ir_allocator = create_allocator(RNS_MEGABYTE(300));
 
 #if USE_LLVM
     CompilerIR compiler_ir = CompilerIR::LLVM;
     LLVM::encode(&parser, &ir_allocator);
 #else
-    CompilerIR compiler_ir = CompilerIR::LLVM_CUSTOM;
+    CompilerIR compiler_ir = CompilerIR::WASM;
     switch (compiler_ir)
     {
         case CompilerIR::WASM:
         {
-            auto wasm_result = WASMBC::encode(&parser, &ir_allocator);
-            jit_wasm(&wasm_result.ib, &wasm_result.encoder);
+            DebugAllocator mc_allocator = create_allocator(RNS_MEGABYTE(100));
+            jit_wasm(&wasm_result.ib, wasm_result.stack_pointer_id);
         } break;
         case CompilerIR::LLVM_CUSTOM:
         {
-            LLVMIR::encode(&parser, &ir_allocator);
+            //LLVMIR::encode(&parser, &ir_allocator);
         } break;
         default:
             RNS_UNREACHABLE;
@@ -109,7 +104,6 @@ s32 rns_main(s32 argc, char* argv[])
     auto diff_us = diff * us;
     auto time_us = (double)diff_us / (double)freq;
     printf("Time: %Lf us\n", time_us);
-#endif
 #endif
     return 0;
 }
