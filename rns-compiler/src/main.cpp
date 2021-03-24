@@ -4,6 +4,8 @@
 #include <RNS/os.h>
 #include <RNS/os_internal.h>
 #include <RNS/data_structures.h>
+#include <RNS/profiler.h>
+
 
 #define USE_LLVM 0
 #include <stdio.h>
@@ -30,11 +32,7 @@ enum class CompilerIR
 
 s32 rns_main(s32 argc, char* argv[])
 {
-#ifndef RNS_DEBUG
-    s64 freq;
-    QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
-    s64 start, end;
-    QueryPerformanceCounter((LARGE_INTEGER*)&start);
+#ifdef SL_INSTR
 #endif
     if (argc < 2)
     {
@@ -42,10 +40,18 @@ s32 rns_main(s32 argc, char* argv[])
         return -1;
     }
 
+#if SL_INSTR
+    PerformanceAPI_BeginEvent("Main function", nullptr, PERFORMANCEAPI_DEFAULT_COLOR);
+#endif
+
+    char error_message[1024]{};
+#define READ_FROM_FILE 0
+    const char* file_ptr;
+    u32 file_len;
+#if READ_FROM_FILE
     const char* filename = argv[1];
     assert(filename);
 
-    char error_message[1024]{};
 
     DebugAllocator file_allocator = create_allocator(RNS_MEGABYTE(1));
     auto file_buffer = RNS::file_load(filename, &file_allocator);
@@ -55,10 +61,19 @@ s32 rns_main(s32 argc, char* argv[])
         return -1;
     }
 
+    file_ptr = file_buffer.ptr;
+    file_len = static_cast<u32>(file_buffer.len);
+#else
+    const char file[] = "main :: () -> s32 { a : s32 = 5; b : s32 = a + 4; return b + a; }";
+
+    file_ptr = file;
+    file_len = rns_array_length(file);
+#endif
+
     DebugAllocator lexer_allocator = create_allocator(RNS_MEGABYTE(100));
     DebugAllocator name_allocator = create_allocator(RNS_MEGABYTE(20));
 
-    TokenBuffer tb = lex(&lexer_allocator, &name_allocator, file_buffer.ptr, static_cast<u32>(file_buffer.len));
+    TokenBuffer tb = lex(&lexer_allocator, &name_allocator, file_ptr, file_len);
 
     DebugAllocator node_allocator = create_allocator(RNS_MEGABYTE(200));
     DebugAllocator function_allocator = create_allocator(RNS_MEGABYTE(100));
@@ -97,13 +112,8 @@ s32 rns_main(s32 argc, char* argv[])
     }
 #endif
 
-#ifndef RNS_DEBUG
-    QueryPerformanceCounter((LARGE_INTEGER*)&end);
-    auto diff = end - start;
-    auto us = 1000000;
-    auto diff_us = diff * us;
-    auto time_us = (double)diff_us / (double)freq;
-    printf("Time: %Lf us\n", time_us);
+#if SL_INSTR
+    PerformanceAPI_EndEvent();
 #endif
     return 0;
 }

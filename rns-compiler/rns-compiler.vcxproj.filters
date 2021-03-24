@@ -16,5 +16,6 @@
     <ClInclude Include="src\x86_64_encoding.h" />
     <ClInclude Include="src\x86_64.h" />
     <ClInclude Include="src\bytecode.h" />
+    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\profiler.h" />
   </ItemGroup>
 </Project>

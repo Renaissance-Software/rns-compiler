@@ -1,5 +1,6 @@
 #include "parser.h"
 
+#include <RNS/profiler.h>
 #include <stdio.h>
 
 using namespace RNS;
@@ -649,6 +650,7 @@ const char* node_type_to_string(NodeType type)
 // @TODO: reconsider what type is to be returned from top level declarations
 Result parse(TokenBuffer* tb, RNS::Allocator* node_allocator, RNS::Allocator* function_allocator, RNS::Allocator* general_allocator, char* error_message)
 {
+    RNS_PROFILE_FUNCTION();
     Parser parser = {
         .ptr = tb->ptr,
         .parser_it = 0,

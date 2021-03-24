@@ -1,6 +1,7 @@
 #include "lexer.h"
 
 #include <RNS/os.h>
+#include <RNS/profiler.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -186,6 +187,8 @@ static inline NameMatch match_name(const char* name, u32 len)
 
 TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const char* file, u32 file_size)
 {
+    RNS_PROFILE_FUNCTION();
+
     s64 tokens_to_allocate = 64 + ((s64)file_size / 2);
     s64 chars_to_allocate_in_string_buffer = 64 + (tokens_to_allocate / 5);
     TokenBuffer token_buffer = {
@@ -199,10 +202,6 @@ TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const cha
 
 
     Token* token = nullptr;
-#if 0
-    s64 freq;
-    s64 start, end;
-#endif
 
     for (u32 i = 0; i < file_size; i++)
     {
@@ -333,11 +332,6 @@ TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const cha
         }
     }
     token_buffer.line_count++;
-
-#if 0
-    f64 ns = ((f64)(end - start) * 1000 * 1000 * 1000 / freq);
-    printf("Lexed in %f ns. %f MB/s\n", ns, (u64)file_size / ((f64)(end - start) * 1000 * 1000 / freq) );
-#endif
 
     return token_buffer;
 }

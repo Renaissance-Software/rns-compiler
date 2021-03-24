@@ -18,4 +18,9 @@
     <LocalDebuggerDebuggerType>NativeOnly</LocalDebuggerDebuggerType>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Superluminal|x64'">
+    <LocalDebuggerCommandArguments>src.rns</LocalDebuggerCommandArguments>
+    <LocalDebuggerDebuggerType>NativeOnly</LocalDebuggerDebuggerType>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
 </Project>

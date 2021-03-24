@@ -3,6 +3,7 @@
 #include <RNS/compiler.h>
 #include <RNS/os.h>
 #include <RNS/os_internal.h>
+#include <RNS/profiler.h>
 
 #include "bytecode.h"
 
@@ -533,14 +534,14 @@ struct ImportLibrary
 
 struct BufferU8 : public Buffer<u8>
 {
-    static BufferU8 create(Allocator* allocator, s64 count)
+    static BufferU8 create(Allocator* allocator, s64 size)
     {
         assert(allocator);
-        assert(count > 0);
+        assert(size > 0);
         BufferU8 buffer;
-        buffer.ptr = new(allocator) u8[count];
+        buffer.ptr = new(allocator) u8[size];
         buffer.len = 0;
-        buffer.cap = count;
+        buffer.cap = size;
         buffer.allocator = allocator;
 
         assert(buffer.ptr);
@@ -2413,7 +2414,7 @@ Value* fn_arg(ValueBuffer* value_buffer, FunctionBuilder* fn_builder, Descriptor
     return result;
 };
 
-void fn_return(ValueBuffer* value_buffer, FunctionBuilder* fn_builder, Value* to_return)
+void fn_return(ValueBuffer* value_buffer, FunctionBuilder* fn_builder, Value* to_return, bool no_jump)
 {
     assert(to_return);
     DescriptorFunction* function = &fn_builder->descriptor->function;
@@ -2440,7 +2441,10 @@ void fn_return(ValueBuffer* value_buffer, FunctionBuilder* fn_builder, Value* to
         move_value(value_buffer, fn_builder, function->return_value, to_return);
     }
 
-    fn_builder->instruction_buffer.append({ jmp, { rel(fn_builder->epilogue_label) } }, METACONTEXT);
+    if (!no_jump)
+    {
+        fn_builder->instruction_buffer.append({ jmp, { rel(fn_builder->epilogue_label) } }, METACONTEXT);
+    }
 }
 
 u64 helper_value_as_function(Value* value)
@@ -2861,9 +2865,9 @@ TestEncodingFn(test_basic_conditional)
     Value* arg_value = fn_arg(value_buffer, fn_builder, &descriptor_s32);
     Value* if_condition = compare(value_buffer, fn_builder, CompareOp::Equal, arg_value, s32_value(value_buffer, 0));
     Label* conditional = if_begin(general_allocator, fn_builder, if_condition);
-    fn_return(value_buffer, fn_builder, s32_value(value_buffer, 0));
+    fn_return(value_buffer, fn_builder, s32_value(value_buffer, 0), false);
     if_end(fn_builder, conditional);
-    fn_return(value_buffer, fn_builder, s32_value(value_buffer, 1));
+    fn_return(value_buffer, fn_builder, s32_value(value_buffer, 1), false);
     fn_end(fn_builder);
     jit_end(virtual_allocator, program);
 
@@ -2892,13 +2896,13 @@ TestEncodingFn(test_partial_application)
     s64 test_n = 42;
     FunctionBuilder* id_fn_builder = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     Value* arg_value = fn_arg(value_buffer, id_fn_builder, &descriptor_s64);
-    fn_return(value_buffer, id_fn_builder, arg_value);
+    fn_return(value_buffer, id_fn_builder, arg_value, false);
     fn_end(id_fn_builder);
 
     FunctionBuilder* partial_fn_builder = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     Value* call_args[] = { s64_value(value_buffer, test_n) };
     Value* call_value = call_function_value(descriptor_buffer, value_buffer, partial_fn_builder, id_fn_builder->value, call_args, rns_array_length(call_args));
-    fn_return(value_buffer, partial_fn_builder, call_value);
+    fn_return(value_buffer, partial_fn_builder, call_value, false);
     fn_end(partial_fn_builder);
 
     jit_end(virtual_allocator, program);
@@ -2930,7 +2934,7 @@ TestEncodingFn(test_call_puts)
 
     (void)call_function_value(descriptor_buffer, value_buffer, fn_builder, puts_value, args, rns_array_length(args));
 
-    fn_return(value_buffer, fn_builder, &void_value);
+    fn_return(value_buffer, fn_builder, &void_value, false);
     fn_end(fn_builder);
     jit_end(virtual_allocator, program);
 
@@ -2951,7 +2955,7 @@ TestEncodingFn(test_rns_add_sub)
     Value* b_value = fn_arg(value_buffer, fn_builder, &descriptor_s64);
 
     auto* return_result = rns_add(value_buffer, fn_builder, rns_sub(value_buffer, fn_builder, a_value, s64_value(value_buffer, sub)), b_value);
-    fn_return(value_buffer, fn_builder, return_result);
+    fn_return(value_buffer, fn_builder, return_result, false);
     fn_end(fn_builder);
     jit_end(virtual_allocator, program);
 
@@ -2976,7 +2980,7 @@ TestEncodingFn(test_multiply)
     Value* a_value = fn_arg(value_buffer, fn_builder, &descriptor_s32);
 
     auto* return_result = rns_multiply_signed(value_buffer, fn_builder, a_value, s32_value(value_buffer, b));
-    fn_return(value_buffer, fn_builder, return_result);
+    fn_return(value_buffer, fn_builder, return_result, false);
     fn_end(fn_builder);
     jit_end(virtual_allocator, program);
 
@@ -3001,7 +3005,7 @@ TestEncodingFn(test_divide)
     Value* b_value = fn_arg(value_buffer, fn_builder, &descriptor_s32);
 
     auto* return_result = rns_signed_div(value_buffer, fn_builder, a_value, b_value);
-    fn_return(value_buffer, fn_builder, return_result);
+    fn_return(value_buffer, fn_builder, return_result, false);
     fn_end(fn_builder);
     jit_end(virtual_allocator, program);
 
@@ -3107,7 +3111,7 @@ TestEncodingFn(test_structs)
         auto* width = struct_get_field(general_allocator, size_struct, "width");
         auto* height = struct_get_field(general_allocator, size_struct, "height");
         auto* mul_result = rns_multiply_signed(value_buffer, fn_builder, width, height);
-        fn_return(value_buffer, fn_builder, mul_result);
+        fn_return(value_buffer, fn_builder, mul_result, false);
         fn_end(fn_builder);
         jit_end(virtual_allocator, program);
     }
@@ -3141,7 +3145,7 @@ TestEncodingFn(tests_arguments_on_the_stack)
     auto* arg6 = fn_arg(value_buffer, fn_builder, &descriptor_s64);
     auto* arg7 = fn_arg(value_buffer, fn_builder, &descriptor_s64);
 
-    fn_return(value_buffer, fn_builder, arg5);
+    fn_return(value_buffer, fn_builder, arg5, false);
     fn_end(fn_builder);
     jit_end(virtual_allocator, program);
 
@@ -3203,7 +3207,7 @@ TestEncodingFn(test_type_checker)
     fn_end(fn_builder_d);
     auto* fn_builder_e = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     auto* e_arg0 = fn_arg(value_buffer, fn_builder_e, &descriptor_s32);
-    fn_return(value_buffer, fn_builder_e, s32_value(value_buffer, 0));
+    fn_return(value_buffer, fn_builder_e, s32_value(value_buffer, 0), false);
     fn_end(fn_builder_e);
     jit_end(virtual_allocator, program);
 
@@ -3223,13 +3227,13 @@ TestEncodingFn(test_fibonacci)
         {
             auto* condition = compare(value_buffer, fib_builder, CompareOp::Equal, n, s64_value(value_buffer, 0));
             auto* if_lbl = if_begin(general_allocator, fib_builder, condition);
-            fn_return(value_buffer, fib_builder, s64_value(value_buffer, 0));
+            fn_return(value_buffer, fib_builder, s64_value(value_buffer, 0), false);
             if_end(fib_builder, if_lbl);
         }
         {
             auto* condition = compare(value_buffer, fib_builder, CompareOp::Equal, n, s64_value(value_buffer, 1));
             auto* if_lbl = if_begin(general_allocator, fib_builder, condition);
-            fn_return(value_buffer, fib_builder, s64_value(value_buffer, 1));
+            fn_return(value_buffer, fib_builder, s64_value(value_buffer, 1), false);
             if_end(fib_builder, if_lbl);
         }
 
@@ -3240,7 +3244,7 @@ TestEncodingFn(test_fibonacci)
         auto* f_minus_two = call_function_value(descriptor_buffer, value_buffer, fib_builder, fib_builder->value, &n_minus_two, 1);
 
         auto* result = rns_add(value_buffer, fib_builder, f_minus_one, f_minus_two);
-        fn_return(value_buffer, fib_builder, result);
+        fn_return(value_buffer, fib_builder, result, false);
         fn_end(fib_builder);
         jit_end(virtual_allocator, program);
     }
@@ -3260,7 +3264,7 @@ Value* make_identity(Allocator* general_allocator, ValueBuffer* value_buffer, De
 {
     auto* fn_builder = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     auto* arg = fn_arg(value_buffer, fn_builder, descriptor);
-    fn_return(value_buffer, fn_builder, arg);
+    fn_return(value_buffer, fn_builder, arg, false);
     fn_end(fn_builder);
 
     return fn_builder->value;
@@ -3270,7 +3274,7 @@ Value* make_add_two(Allocator* general_allocator, ValueBuffer* value_buffer, Des
     auto* fn_builder = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     auto* arg = fn_arg(value_buffer, fn_builder, descriptor);
     auto* result = rns_add(value_buffer, fn_builder, arg, s64_value(value_buffer, 2));
-    fn_return(value_buffer, fn_builder, result);
+    fn_return(value_buffer, fn_builder, result, false);
     fn_end(fn_builder);
 
     return fn_builder->value;
@@ -3342,12 +3346,12 @@ TestEncodingFn(test_struct_reflection)
     Value* arg_count = fn_reflect(value_buffer, fn_builder, point_struct_descriptor);
     auto* struct_ = Stack(value_buffer, fn_builder, &descriptor_struct_reflection, arg_count);
     auto* field = struct_get_field(general_allocator, struct_, "field_count");
-    fn_return(value_buffer, fn_builder, field);
+    fn_return(value_buffer, fn_builder, field, false);
     fn_end(fn_builder);
     jit_end(virtual_allocator, program);
 
-    s32 count = value_as_function(fn_builder->value, RetS32ParamVoid)();
-    bool fn_result = count == 2;
+    s32 size = value_as_function(fn_builder->value, RetS32ParamVoid)();
+    bool fn_result = size == 2;
     return fn_result;
 }
 
@@ -3357,13 +3361,13 @@ TestEncodingFn(test_adhoc_polymorphism)
     auto sizeof_s32 = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     {
         auto* s32_arg = fn_arg(value_buffer, sizeof_s32, &descriptor_s32);
-        fn_return(value_buffer, sizeof_s32, s64_value(value_buffer, sizeof(s32)));
+        fn_return(value_buffer, sizeof_s32, s64_value(value_buffer, sizeof(s32)), false);
         fn_end(sizeof_s32);
     }
     auto sizeof_s64 = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     {
         auto* s64_arg = fn_arg(value_buffer, sizeof_s64, &descriptor_s64);
-        fn_return(value_buffer, sizeof_s64, s64_value(value_buffer, sizeof(s64)));
+        fn_return(value_buffer, sizeof_s64, s64_value(value_buffer, sizeof(s64)), false);
         fn_end(sizeof_s64);
     }
 
@@ -3378,7 +3382,7 @@ TestEncodingFn(test_adhoc_polymorphism)
         auto* y = call_function_value(descriptor_buffer, value_buffer, checker_fn, sizeof_s32->value, &zero_value_2, 1);
 
         auto* addition = rns_add(value_buffer, checker_fn, x, y);
-        fn_return(value_buffer, checker_fn, addition);
+        fn_return(value_buffer, checker_fn, addition, false);
         fn_end(checker_fn);
     }
 
@@ -3426,7 +3430,7 @@ TestEncodingFn(test_rip_addressing_mode)
     auto checker_fn = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     {
         auto* addition = rns_add(value_buffer, checker_fn, global_a, global_b);
-        fn_return(value_buffer, checker_fn, addition);
+        fn_return(value_buffer, checker_fn, addition, false);
         fn_end(checker_fn);
     }
     jit_end(virtual_allocator, program);
@@ -3529,11 +3533,11 @@ TestEncodingFn(test_tagged_unions)
         Value* some = cast_to_tag(general_allocator, descriptor_buffer, value_buffer, with_default_value, "Some", option_value);
         auto* some_if_block = if_begin(general_allocator, with_default_value, some);
         auto* value = struct_get_field(general_allocator, some, "value");
-        fn_return(value_buffer, with_default_value, value);
+        fn_return(value_buffer, with_default_value, value, false);
         if_end(with_default_value, some_if_block);
     }
 
-    fn_return(value_buffer, with_default_value, default_value);
+    fn_return(value_buffer, with_default_value, default_value, false);
     fn_end(with_default_value);
     jit_end(virtual_allocator, program);
 
@@ -3626,7 +3630,7 @@ TestEncodingFn(test_large_size_return)
     auto checker_fn = fn_begin(general_allocator, value_buffer, descriptor_buffer, program);
     Value* test_result = call_function_value(descriptor_buffer, value_buffer, checker_fn, c_test_fn_value, NULL, 0);
     Value* x = struct_get_field(general_allocator, test_result, "x");
-    fn_return(value_buffer, checker_fn, x);
+    fn_return(value_buffer, checker_fn, x, false);
     fn_end(checker_fn);
     jit_end(virtual_allocator, program);
 
@@ -3645,7 +3649,7 @@ TestEncodingFn(test_shared_library)
     {
         auto* arg = s32_value(value_buffer, STD_INPUT_HANDLE);
         auto* call = call_function_value(descriptor_buffer, value_buffer, checker_fn, GetStdHandle_value, &arg, 1);
-        fn_return(value_buffer, checker_fn, call);
+        fn_return(value_buffer, checker_fn, call, false);
         fn_end(checker_fn);
     }
    
@@ -4168,152 +4172,6 @@ s32 x86_64_test_main(s32 argc, char* argv[])
 #endif
 }
 
-void add_new_id(s64 id_IR, s64 id_MC, s64* IR, s64* MC, u32* count, u32 max)
-{
-    u32 l_count = *count;
-    assert(l_count + 1 <= max);
-    IR[l_count] = id_IR;
-    MC[l_count] = id_MC;
-    *count = l_count + 1;
-}
-
-struct MCConverter
-{
-    IDBuffer BC_ids;
-    IDBuffer MC_ids;
-    Bytecode::IR* ir;
-    ValueBuffer* value_buffer;
-    DescriptorBuffer* descriptor_buffer;
-
-    static MCConverter create(Allocator* allocator, Bytecode::IR* ir, ValueBuffer* value_buffer, DescriptorBuffer* descriptor_buffer)
-    {
-        const auto max_ids = 10000;
-        MCConverter result = {
-            .BC_ids = IDBuffer::create(allocator, max_ids),
-            .MC_ids = IDBuffer::create(allocator, max_ids),
-            .ir = ir,
-            .value_buffer = value_buffer,
-            .descriptor_buffer = descriptor_buffer,
-        };
-
-        return result;
-    }
-
-    void add_new_id(ID bc_id, ID mc_id)
-    {
-        BC_ids.append(bc_id);
-        MC_ids.append(mc_id);
-    }
-
-    Value* get_mc_value_from_id(s64 ir_id)
-    {
-        auto* ir_value = ir->vb.get(ir_id);
-        auto type = ir_value->type;
-        auto op_type = ir_value->op_type;
-
-        switch (op_type)
-        {
-            case Bytecode::OperandType::IntLit:
-                return get_int_lit(ir_value);
-            case Bytecode::OperandType::Invalid:
-                RNS_UNREACHABLE;
-                break;
-            default:
-                RNS_NOT_IMPLEMENTED;
-                break;
-        }
-
-        return nullptr;
-    }
-
-    Value* get_int_lit(Bytecode::Value* ir_value)
-    {
-        switch (ir_value->type)
-        {
-            case NativeTypeID::S32:
-                return s32_value(value_buffer, static_cast<s32>(ir_value->int_lit.lit));
-            default:
-                RNS_NOT_IMPLEMENTED;
-                break;
-        }
-
-        return nullptr;
-    }
-};
-
-void jit_bytecode(Bytecode::IR* ir)
-{
-    DebugAllocator general_allocator = {};
-    DebugAllocator virtual_allocator = {};
-
-    s64 test_allocator_size = 1024*1024*1024;
-
-    void* address = RNS::virtual_alloc(nullptr, test_allocator_size, { .commit = 1, .reserve = 1, .execute = 0, .read = 1, .write = 1 });
-    general_allocator.pool = { (u8*)address, 0, test_allocator_size };
-    void* execution_address = RNS::virtual_alloc(nullptr, test_allocator_size, { .commit = 1, .reserve = 1, .execute = 1, .read = 1, .write = 1 });
-    virtual_allocator = virtual_allocator.create(execution_address, test_allocator_size);
-
-
-    s64 value_count = 10000;
-    s64 descriptor_count = 1000;
-    ValueBuffer value_buffer = ValueBuffer::create(&general_allocator, value_count);
-    DescriptorBuffer descriptor_buffer = DescriptorBuffer::create(&general_allocator, descriptor_count);
-
-    /* PREAMBLE END */
-
-    GlobalBuffer global_buffer = GlobalBuffer::create(&general_allocator, 1024);
-    Program program = { .data = global_buffer, .import_libraries = ImportLibraryBuffer::create(&general_allocator, 16), .entry_point = {}, };
-    program.functions = FunctionBuilderBuffer::create(&general_allocator, 16);
-    MCConverter converter = MCConverter::create(&general_allocator, ir, &value_buffer, &descriptor_buffer);
-
-    auto* main = fn_begin(&general_allocator, &value_buffer, &descriptor_buffer, &program);
-
-    for (auto i = 0; i < ir->ib.len; i++)
-    {
-        auto* bc_instruction = &ir->ib.ptr[i];
-        switch (bc_instruction->id)
-        {
-            case Bytecode::InstructionID::Decl:
-            {
-                auto bc_id = bc_instruction->result;
-                auto* bc_value = ir->vb.get(bc_id);
-                auto type = bc_value->type;
-
-                switch (type)
-                {
-                    case NativeTypeID::S32:
-                    {
-                        auto* new_var = Stack(&value_buffer, main, &descriptor_s32, s32_value(&value_buffer, 0));
-                        auto mc_id = value_buffer.get_id(new_var);
-                        converter.add_new_id(bc_id, mc_id);
-                    } break;
-                    default:
-                        RNS_NOT_IMPLEMENTED;
-                        break;
-                }
-
-            } break;
-            case Bytecode::InstructionID::Add:
-            {
-                Value* op1_value = converter.get_mc_value_from_id(bc_instruction->operands[0]);
-                Value* op2_value = converter.get_mc_value_from_id(bc_instruction->operands[1]);
-
-                Value* result_value = rns_add(&value_buffer, main, op1_value, op2_value);
-                auto result_id = value_buffer.get_id(result_value);
-                converter.add_new_id(bc_instruction->result, result_id);
-            } break;
-            case Bytecode::InstructionID::Assign:
-            {
-
-            }
-            default:
-            {
-                RNS_NOT_IMPLEMENTED;
-            } break;
-        }
-    }
-}
-
 
 using WASMInstruction = WASMBC::InstructionStruct;
 using WASMInstructionBuffer = Buffer<WASMInstruction>;
@@ -4475,6 +4333,19 @@ struct RegisterAllocator
         return nullptr;
     }
 
+    Value* free_register(WASMBC::WASM_ID wasm_id)
+    {
+        RNS_NOT_IMPLEMENTED;
+        for (auto i = 0; i < wasm_id_buffer.len; i++)
+        {
+            auto index = wasm_id_buffer[i];
+            if (index == wasm_id)
+            {
+                auto* mc_value = mc_registers[i];
+            }
+        }
+    }
+
     // @Info: this invalidates the previously used wasm index, which is somewhat different of what happens in x86_64, consider
     bool update_wasm_index(WASMBC::WASM_ID old_index, WASMBC::WASM_ID new_index)
     {
@@ -4495,6 +4366,7 @@ struct RegisterAllocator
 
 void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stack_pointer_id)
 {
+    RNS_PROFILE_FUNCTION();
     DebugAllocator general_allocator = {};
     DebugAllocator virtual_allocator = {};
 
@@ -4916,15 +4788,14 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
                                                     {
                                                         case WASMBC::Instruction::ret:
                                                         {
-                                                            fn_return(&value_buffer, main, reg_mc_result_value);
+                                                            // @TODO: improve this
+                                                            bool no_jump_from_context = true;
+                                                            fn_return(&value_buffer, main, reg_mc_result_value, true);
                                                         } break;
                                                         default:
                                                             RNS_NOT_IMPLEMENTED;
                                                             break;
                                                     }
-                                                    //auto* mc_reg_value = register_allocator.allocate(&value_buffer, wasm_result_reg_index, reg_mc_result_value->descriptor);
-                                                    //assert(mc_reg_value);
-                                                    //move_value(&value_buffer, main, mc_reg_value, reg_mc_result_value);
                                                 }
                                                 else
                                                 {
@@ -4945,11 +4816,6 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
                                     RNS_NOT_IMPLEMENTED;
                                     break;
                             }
-                        } break;
-                        case WASMBC::Instruction::ret:
-                        {
-                            RNS_NOT_IMPLEMENTED;
-                            fn_return(&value_buffer, main, mc_first_reg_value);
                         } break;
                         default:
                             RNS_NOT_IMPLEMENTED;

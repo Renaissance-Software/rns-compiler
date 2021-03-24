@@ -2,7 +2,6 @@
 #include <RNS/types.h>
 #include "compiler_types.h"
 
-Bytecode::IR generate_ir(AST::Result* parser_result, RNS::Allocator* instruction_allocator, RNS::Allocator* value_allocator);
 namespace WASMBC
 {
     struct InstructionStruct;
