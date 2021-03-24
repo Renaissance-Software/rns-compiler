@@ -2438,7 +2438,10 @@ void fn_return(ValueBuffer* value_buffer, FunctionBuilder* fn_builder, Value* to
 
     if (to_return->descriptor->type != DescriptorType::Void)
     {
-        move_value(value_buffer, fn_builder, function->return_value, to_return);
+        if (memcmp(&function->return_value->operand, &to_return->operand, sizeof(to_return->operand)) != 0)
+        {
+            move_value(value_buffer, fn_builder, function->return_value, to_return);
+        }
     }
 
     if (!no_jump)
@@ -4286,6 +4289,7 @@ struct RegisterAllocator
     Value* allocate(ValueBuffer* value_buffer, WASMBC::WASM_ID wasm_id, Descriptor* descriptor)
     {
         auto size = descriptor_size(descriptor);
+
         for (auto i = 0; i < rns_array_length(wasm_registers); i++)
         {
             auto& index = wasm_registers[i];
@@ -4437,9 +4441,7 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
                         // @Info: do a normal set in a virtual register (aka for this one: physical register if possible)
                         else
                         {
-                            auto* mc_reg_value = register_allocator.allocate(&value_buffer, vr_index, descriptor);
-                            assert(mc_reg_value);
-                            move_value(&value_buffer, main, mc_reg_value, i32_const_mc_value);
+                            RNS_NOT_IMPLEMENTED;
                         }
                     } break;
                     default:
@@ -4460,8 +4462,8 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
                     {
                         case WASMBC::Instruction::local_get:
                         {
-                            auto real_value_index = instruction->value;
-                            auto* value_in_reg = register_allocator.find_register(real_value_index);
+                            auto vr_index = instruction->value;
+                            auto* value_in_reg = register_allocator.find_register(vr_index);
                             assert(value_in_reg);
 
                             instruction = wasm_jit.next_instruction();
@@ -4475,6 +4477,7 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
                                     auto* i32_store = Stack(&value_buffer, main, value_in_reg->descriptor, value_in_reg);
                                     auto mc_index = value_buffer.get_id(i32_store);
                                     wasm_jit.append_stack_index(stack_offset, mc_index);
+                                    register_allocator.free_register(vr_index);
                                 } break;
                                 default:
                                     RNS_NOT_IMPLEMENTED;
@@ -4505,9 +4508,7 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
                                     switch (next_instruction->id)
                                     {
                                         case WASMBC::Instruction::local_get:
-                                        {
-
-                                        } break;
+                                            break;
                                         case WASMBC::Instruction::i32_const:
                                         {
                                             // consume the instruction
@@ -4616,8 +4617,13 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
                                                                                                         {
                                                                                                             auto wasm_stack_offset = instruction->value;
                                                                                                             auto* store_value = Stack(&value_buffer, main, mc_result_value->descriptor, mc_result_value);
-                                                                                                            auto mc_index = value_buffer.get_id(mc_result_value);
+                                                                                                            auto mc_index = value_buffer.get_id(store_value);
                                                                                                             wasm_jit.append_stack_index(wasm_stack_offset, mc_index);
+                                                                                                            assert(wasm_result_index == wasm_second_operand_index);
+                                                                                                            // @Info: this variable is the virtual register for the load, which is to be the same physical register
+                                                                                                            // than the binop result.
+                                                                                                            // @TODO: improve this, it's awful
+                                                                                                            register_allocator.free_register(wasm_new_reg_index);
                                                                                                         } break;
                                                                                                         default:
                                                                                                             RNS_NOT_IMPLEMENTED;
@@ -4719,39 +4725,7 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
                                             {
                                                 instruction = wasm_jit.next_instruction();
 
-                                                if (instruction->value == stack_pointer_id)
-                                                {
-                                                    instruction = wasm_jit.next_instruction();
-                                                    instr_id = instruction->id;
-
-                                                    switch (instr_id)
-                                                    {
-                                                        case WASMBC::Instruction::local_get:
-                                                        {
-                                                            assert(instruction->value == wasm_result_reg_index);
-                                                            instruction = wasm_jit.next_instruction();
-                                                            instr_id = instruction->id;
-
-                                                            switch (instr_id)
-                                                            {
-                                                                case WASMBC::Instruction::i32_store:
-                                                                {
-                                                                    auto stack_offset = instruction->value;
-                                                                    auto* i32_store = Stack(&value_buffer, main, reg_mc_result_value->descriptor, reg_mc_result_value);
-                                                                    auto mc_index = value_buffer.get_id(i32_store);
-                                                                    wasm_jit.append_stack_index(stack_offset, mc_index);
-                                                                } break;
-                                                                default:
-                                                                    RNS_NOT_IMPLEMENTED;
-                                                                    break;
-                                                            }
-                                                        } break;
-                                                        default:
-                                                            RNS_NOT_IMPLEMENTED;
-                                                            break;
-                                                    }
-                                                }
-                                                else if (instruction->value == wasm_result_reg_index)
+                                                if (instruction->value == wasm_result_reg_index)
                                                 {
                                                     instruction = wasm_jit.next_instruction();
                                                     instr_id = instruction->id;
