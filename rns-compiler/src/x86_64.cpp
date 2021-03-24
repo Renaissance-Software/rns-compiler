@@ -4243,7 +4243,7 @@ struct WASM_JIT
         return instruction;
     }
 
-    // @Info: this doesn't increment the "instruction pointer" aka instruction index iterator
+    // @Info: this doesn't increment the "instruction pointer" aka instruction index_ref iterator
     WASMInstruction* peek_next_instruction()
     {
         WASMInstruction* instruction = nullptr;
@@ -4280,49 +4280,33 @@ struct WASM_JIT
 
 struct RegisterAllocator
 {
-    Buffer<WASMBC::WASM_ID> wasm_id_buffer;
-    Buffer<Value*> mc_registers;
+    WASMBC::WASM_ID wasm_registers[register_count_per_size];
+    Value* mc_registers[register_count_per_size];
 
     Value* allocate(ValueBuffer* value_buffer, WASMBC::WASM_ID wasm_id, Descriptor* descriptor)
     {
         auto size = descriptor_size(descriptor);
-
-        // @TODO: turn this into a real bitset
-        bool register_bitset[register_count_per_size] = {};
-
-        for (auto value : mc_registers)
+        for (auto i = 0; i < rns_array_length(wasm_registers); i++)
         {
-            if (value->operand.type == OperandType::Register)
+            auto& index = wasm_registers[i];
+            if (index == WASMBC::no_value)
             {
-                auto index = static_cast<u32>(value->operand.reg);
-                assert(!register_bitset[index]);
-                register_bitset[index] = true;
+                auto* reg_allocated = reg_value(value_buffer, static_cast<Register>(i), descriptor);
+                wasm_registers[i] = wasm_id;
+                mc_registers[i] = reg_allocated;
+                return reg_allocated;
             }
         }
 
-        for (auto i = 0; i < register_count_per_size; i++)
-        {
-            auto reg_bit = register_bitset[i];
-            if (!reg_bit)
-            {
-                auto* reg_val = reg_value(value_buffer, static_cast<Register>(i), descriptor);
-                assert(reg_val);
-                wasm_id_buffer.append(wasm_id);
-                mc_registers.append(reg_val);
-
-                return reg_val;
-            }
-        }
-        // @TODO: switch to a better register allocation algorithm
         RNS_UNREACHABLE;
         return nullptr;
     }
 
     Value* find_register(WASMBC::WASM_ID wasm_id)
     {
-        for (auto i = 0; i < wasm_id_buffer.len; i++)
+        for (auto i = 0; i < rns_array_length(wasm_registers); i++)
         {
-            auto index = wasm_id_buffer[i];
+            auto index = wasm_registers[i];
             if (index == wasm_id)
             {
                 return mc_registers[i];
@@ -4335,32 +4319,21 @@ struct RegisterAllocator
 
     Value* free_register(WASMBC::WASM_ID wasm_id)
     {
-        RNS_NOT_IMPLEMENTED;
-        for (auto i = 0; i < wasm_id_buffer.len; i++)
+        for (auto i = 0; i < rns_array_length(wasm_registers); i++)
         {
-            auto index = wasm_id_buffer[i];
-            if (index == wasm_id)
+            auto& index_ref = wasm_registers[i];
+            if (index_ref == wasm_id)
             {
-                auto* mc_value = mc_registers[i];
-            }
-        }
-    }
-
-    // @Info: this invalidates the previously used wasm index, which is somewhat different of what happens in x86_64, consider
-    bool update_wasm_index(WASMBC::WASM_ID old_index, WASMBC::WASM_ID new_index)
-    {
-        for (auto& index : wasm_id_buffer)
-        {
-            if (index == old_index)
-            {
-                index = new_index;
-                return true;
+                index_ref = WASMBC::no_value;
+                auto& mc_ref = mc_registers[i];
+                auto* popped_value = mc_ref;
+                mc_ref = nullptr;
+                return popped_value;
             }
         }
 
         RNS_UNREACHABLE;
-        //@Info: consider the note above if this happens
-        return false;
+        return nullptr;
     }
 };
 
@@ -4392,10 +4365,9 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
 
     auto* main = fn_begin(&general_allocator, &value_buffer, &descriptor_buffer, &program);
 
-    RegisterAllocator register_allocator = {
-        .wasm_id_buffer = Buffer<WASMBC::WASM_ID>::create(&general_allocator, 1024),
-        .mc_registers = Buffer<Value*>::create(&general_allocator, 1024),
-    };
+    RegisterAllocator register_allocator; 
+    memset(register_allocator.wasm_registers, WASMBC::no_value, sizeof(register_allocator.wasm_registers));
+    memset(register_allocator.mc_registers, 0, sizeof(register_allocator.mc_registers));
 
     for (WASMInstruction* instruction = wasm_jit.next_instruction(); instruction; instruction = wasm_jit.next_instruction())
     {
@@ -4704,7 +4676,7 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
                 }
                 else
                 {
-                    // @Info: if a binary operation occurs, this index will be invalidated and the new SSA index will take his place with the result updated,
+                    // @Info: if a binary operation occurs, this index_ref will be invalidated and the new SSA index will take his place with the result updated,
                     // which is the standard behavior for x86_64 basic bin ops
                     u32 wasm_first_index = instruction->value;
                     auto* mc_first_reg_value = register_allocator.find_register(wasm_first_index);
