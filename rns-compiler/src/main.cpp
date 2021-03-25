@@ -64,7 +64,7 @@ s32 rns_main(s32 argc, char* argv[])
     file_ptr = file_buffer.ptr;
     file_len = static_cast<u32>(file_buffer.len);
 #else
-    const char file[] = "main :: () -> s32 { a : s32 = 5; b: s32 = 4; return a + b + 5; }";
+    const char file[] = "main :: () -> s32 { a : s32 = 5; b: s32 = a + 4; return b - a + 2 + 3; }";
 
     file_ptr = file;
     file_len = rns_array_length(file);
@@ -87,7 +87,6 @@ s32 rns_main(s32 argc, char* argv[])
     }
 
     DebugAllocator bc_allocator = create_allocator(RNS_MEGABYTE(100));
-    auto wasm_result = WASMBC::encode(&parser_result, &bc_allocator);
 
 #if USE_LLVM
     CompilerIR compiler_ir = CompilerIR::LLVM;
@@ -98,6 +97,7 @@ s32 rns_main(s32 argc, char* argv[])
     {
         case CompilerIR::WASM:
         {
+            auto wasm_result = WASMBC::encode(&parser_result, &bc_allocator);
             DebugAllocator mc_allocator = create_allocator(RNS_MEGABYTE(100));
             jit_wasm(&wasm_result.ib, wasm_result.stack_pointer_id);
         } break;

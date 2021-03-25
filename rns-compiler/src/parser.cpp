@@ -309,7 +309,7 @@ struct Parser
         while ((bin_op = is_bin_op()) != BinOp::None)
         {
             assert(bin_op != BinOp::VariableDecl);
-            auto* right_expression = parse_expression();
+            auto* right_expression = parse_primary_expression();
             if (!right_expression)
             {
                 return nullptr;

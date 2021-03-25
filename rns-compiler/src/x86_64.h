@@ -13,5 +13,4 @@ namespace WASMBC
     using WASM_ID = u32;
 }
 
-void jit_bytecode(Bytecode::IR* ir);
 void jit_wasm(RNS::Buffer<WASMBC::InstructionStruct>* buffer, WASMBC::WASM_ID stack_pointer_id);
