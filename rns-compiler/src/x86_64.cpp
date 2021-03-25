@@ -2355,7 +2355,7 @@ u64 estimate_max_code_size(Program* program)
     for (auto i = 0; i < program->functions.len; i++)
     {
         auto* fn = &program->functions.ptr[i];
-        total_instruction_count += fn->instruction_buffer.len ? fn->instruction_buffer.len : 5;
+        total_instruction_count += 5 + fn->instruction_buffer.len;
     }
 
     const u64 max_bytes_per_instruction = 15;
@@ -2395,6 +2395,7 @@ JIT jit_end(Allocator* virtual_allocator, Program* program)
     for (auto i = 0; i < program->functions.len; i++)
     {
         auto* function = &program->functions.ptr[i];
+        assert(function->instruction_buffer.len < result.code.cap);
         fn_encode(&result.code, function);
     }
 
@@ -4373,6 +4374,28 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
     memset(register_allocator.wasm_registers, WASMBC::no_value, sizeof(register_allocator.wasm_registers));
     memset(register_allocator.mc_registers, 0, sizeof(register_allocator.mc_registers));
 
+    /* WASM translation helper guide: rewrite this loop-switch: VR = virtual register
+    *   * Constant loading
+    *       - const const_n
+    *       - local.set constant_vr
+    *   * Store
+    *       - local.get stack_pointer
+    *       - local.get store_operand
+    *       - store stack_offset
+    *   * Load
+    *       - local.get stack_pointer
+    *       - load stack_offset
+    *       - local.set load_vr
+    *   * Binary operation
+    *       - local.get operand1_vr
+    *       - local.get operand2_vr
+    *       - bin_operation_opcode
+    *       - local.set operation_result_vr
+    *   * Return
+    *       - local.get return_operand_vr
+    *       - return
+    */
+
     for (WASMInstruction* instruction = wasm_jit.next_instruction(); instruction; instruction = wasm_jit.next_instruction())
     {
         auto instr_id = instruction->id;
@@ -4574,70 +4597,80 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
 
                                                                     switch (instr_id)
                                                                     {
+                                                                        // @Info: switch for binary operations
                                                                         case WASMBC::Instruction::i32_add:
                                                                         {
                                                                             main->instruction_buffer.append({ add, {mc_first_operand_value->operand, mc_second_operand_value->operand } }, METACONTEXT);
-                                                                            assert(mc_first_operand_value->operand.type == OperandType::Register);
-                                                                            auto* mc_result_value = mc_first_operand_value;
+                                                                        } break;
+                                                                        case WASMBC::Instruction::i32_sub:
+                                                                        {
+                                                                            main->instruction_buffer.append({ sub, {mc_first_operand_value->operand, mc_second_operand_value->operand } }, METACONTEXT);
+                                                                        } break;
+                                                                        default:
+                                                                            RNS_NOT_IMPLEMENTED;
+                                                                            break;
+                                                                    }
+                                                                    assert(mc_first_operand_value->operand.type == OperandType::Register);
+                                                                    auto* mc_result_value = mc_first_operand_value;
+
+                                                                    instruction = wasm_jit.next_instruction();
+                                                                    instr_id = instruction->id;
+
+                                                                    switch (instr_id)
+                                                                    {
+                                                                        case WASMBC::Instruction::local_set:
+                                                                        {
+                                                                            auto wasm_result_index = instruction->value;
 
                                                                             instruction = wasm_jit.next_instruction();
                                                                             instr_id = instruction->id;
 
                                                                             switch (instr_id)
                                                                             {
-                                                                                case WASMBC::Instruction::local_set:
+                                                                                case WASMBC::Instruction::local_get:
                                                                                 {
-                                                                                    auto wasm_result_index = instruction->value;
-
-                                                                                    instruction = wasm_jit.next_instruction();
-                                                                                    instr_id = instruction->id;
-
-                                                                                    switch (instr_id)
+                                                                                    auto wasm_first_operand_index = instruction->value;
+                                                                                    if (wasm_first_operand_index == stack_pointer_id)
                                                                                     {
-                                                                                        case WASMBC::Instruction::local_get:
+                                                                                        instruction = wasm_jit.next_instruction();
+                                                                                        instr_id = instruction->id;
+                                                                                        switch (instr_id)
                                                                                         {
-                                                                                            auto wasm_first_operand_index = instruction->value;
-                                                                                            assert(wasm_first_operand_index == stack_pointer_id);
-
-                                                                                            instruction = wasm_jit.next_instruction();
-                                                                                            instr_id = instruction->id;
-                                                                                            switch (instr_id)
+                                                                                            case WASMBC::Instruction::local_get:
                                                                                             {
-                                                                                                case WASMBC::Instruction::local_get:
+                                                                                                auto wasm_second_operand_index = instruction->value;
+                                                                                                assert(wasm_second_operand_index == wasm_result_index);
+
+                                                                                                instruction = wasm_jit.next_instruction();
+                                                                                                instr_id = instruction->id;
+
+                                                                                                switch (instr_id)
                                                                                                 {
-                                                                                                    auto wasm_second_operand_index = instruction->value;
-                                                                                                    assert(wasm_second_operand_index == wasm_result_index);
-
-                                                                                                    instruction = wasm_jit.next_instruction();
-                                                                                                    instr_id = instruction->id;
-
-                                                                                                    switch (instr_id)
+                                                                                                    case WASMBC::Instruction::i32_store:
                                                                                                     {
-                                                                                                        case WASMBC::Instruction::i32_store:
-                                                                                                        {
-                                                                                                            auto wasm_stack_offset = instruction->value;
-                                                                                                            auto* store_value = Stack(&value_buffer, main, mc_result_value->descriptor, mc_result_value);
-                                                                                                            auto mc_index = value_buffer.get_id(store_value);
-                                                                                                            wasm_jit.append_stack_index(wasm_stack_offset, mc_index);
-                                                                                                            assert(wasm_result_index == wasm_second_operand_index);
-                                                                                                            // @Info: this variable is the virtual register for the load, which is to be the same physical register
-                                                                                                            // than the binop result.
-                                                                                                            // @TODO: improve this, it's awful
-                                                                                                            register_allocator.free_register(wasm_new_reg_index);
-                                                                                                        } break;
-                                                                                                        default:
-                                                                                                            RNS_NOT_IMPLEMENTED;
-                                                                                                            break;
-                                                                                                    }
-                                                                                                } break;
-                                                                                                default:
-                                                                                                    RNS_NOT_IMPLEMENTED;
-                                                                                                    break;
-                                                                                            }
-                                                                                        } break;
-                                                                                        default:
-                                                                                            RNS_NOT_IMPLEMENTED;
-                                                                                            break;
+                                                                                                        auto wasm_stack_offset = instruction->value;
+                                                                                                        auto* store_value = Stack(&value_buffer, main, mc_result_value->descriptor, mc_result_value);
+                                                                                                        auto mc_index = value_buffer.get_id(store_value);
+                                                                                                        wasm_jit.append_stack_index(wasm_stack_offset, mc_index);
+                                                                                                        assert(wasm_result_index == wasm_second_operand_index);
+                                                                                                        // @Info: this variable is the virtual register for the load, which is to be the same physical register
+                                                                                                        // than the binop result.
+                                                                                                        // @TODO: improve this, it's awful
+                                                                                                        register_allocator.free_register(wasm_new_reg_index);
+                                                                                                    } break;
+                                                                                                    default:
+                                                                                                        RNS_NOT_IMPLEMENTED;
+                                                                                                        break;
+                                                                                                }
+                                                                                            } break;
+                                                                                            default:
+                                                                                                RNS_NOT_IMPLEMENTED;
+                                                                                                break;
+                                                                                        }
+                                                                                    }
+                                                                                    else
+                                                                                    {
+                                                                                        RNS_NOT_IMPLEMENTED;
                                                                                     }
                                                                                 } break;
                                                                                 default:
@@ -4703,65 +4736,77 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
 
                             switch (instr_id)
                             {
+                                // @Info: this is supposed to be a binary operation
                                 case WASMBC::Instruction::i32_add:
                                 {
                                     // @Info: We do a raw add since the one implemented stack-allocates a lot
-                                    main->instruction_buffer.append({ add, {mc_first_reg_value->operand, mc_second_reg_value->operand }}, METACONTEXT);
-                                    auto* reg_mc_result_value = mc_first_reg_value;
+                                    main->instruction_buffer.append({ add, {mc_first_reg_value->operand, mc_second_reg_value->operand } }, METACONTEXT);
+                                } break;
+                                case WASMBC::Instruction::i32_sub:
+                                {
+                                    main->instruction_buffer.append({ sub, {mc_first_reg_value->operand, mc_second_reg_value->operand } }, METACONTEXT);
+                                } break;
+                                default:
+                                    RNS_NOT_IMPLEMENTED;
+                                    break;
+                            }
 
-                                    instruction = wasm_jit.next_instruction();
-                                    instr_id = instruction->id;
+                            auto* reg_mc_result_value = mc_first_reg_value;
 
-                                    switch (instr_id)
+                            instruction = wasm_jit.next_instruction();
+                            instr_id = instruction->id;
+
+                            switch (instr_id)
+                            {
+                                case WASMBC::Instruction::local_set:
+                                {
+                                    auto wasm_result_reg_index = instruction->value;
+
+                                    auto* next_instruction = wasm_jit.peek_next_instruction();
+                                    assert(next_instruction);
+
+                                    if (next_instruction->id == WASMBC::Instruction::local_get)
                                     {
-                                        case WASMBC::Instruction::local_set:
+                                        instruction = wasm_jit.next_instruction();
+
+                                        if (instruction->value == wasm_result_reg_index)
                                         {
-                                            auto wasm_result_reg_index = instruction->value;
+                                            instruction = wasm_jit.next_instruction();
+                                            instr_id = instruction->id;
 
-                                            auto* next_instruction = wasm_jit.peek_next_instruction();
-                                            assert(next_instruction);
-
-                                            if (next_instruction->id == WASMBC::Instruction::local_get) 
+                                            switch (instr_id)
                                             {
-                                                instruction = wasm_jit.next_instruction();
-
-                                                if (instruction->value == wasm_result_reg_index)
+                                                case WASMBC::Instruction::ret:
                                                 {
-                                                    instruction = wasm_jit.next_instruction();
-                                                    instr_id = instruction->id;
-
-                                                    switch (instr_id)
-                                                    {
-                                                        case WASMBC::Instruction::ret:
-                                                        {
-                                                            // @TODO: improve this
-                                                            bool no_jump_from_context = true;
-                                                            fn_return(&value_buffer, main, reg_mc_result_value, true);
-                                                        } break;
-                                                        default:
-                                                            RNS_NOT_IMPLEMENTED;
-                                                            break;
-                                                    }
-                                                }
-                                                else
-                                                {
+                                                    // @TODO: improve this
+                                                    bool no_jump_from_context = true;
+                                                    fn_return(&value_buffer, main, reg_mc_result_value, true);
+                                                } break;
+                                                default:
                                                     RNS_NOT_IMPLEMENTED;
-                                                }
+                                                    break;
                                             }
-                                            else
-                                            {
-                                                RNS_NOT_IMPLEMENTED;
-                                            }
-                                        } break;
-                                        default:
+                                        }
+                                        else
+                                        {
                                             RNS_NOT_IMPLEMENTED;
-                                            break;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        RNS_NOT_IMPLEMENTED;
                                     }
                                 } break;
                                 default:
                                     RNS_NOT_IMPLEMENTED;
                                     break;
                             }
+                        } break;
+                        case WASMBC::Instruction::ret:
+                        {
+                            // @TODO: improve this
+                            bool no_jump_from_context = true;
+                            fn_return(&value_buffer, main, mc_first_reg_value, true);
                         } break;
                         default:
                             RNS_NOT_IMPLEMENTED;
@@ -4781,6 +4826,6 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
     auto main_fn = value_as_function(main->value, RetS32ParamVoid);
     auto result = main_fn();
 
-    auto a = 5; auto b = a + 4; auto expected = b + a;
+    auto a = 5; auto b = 4; auto expected = a + b + 5;
     assert(result == expected);
 }

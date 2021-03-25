@@ -172,7 +172,7 @@ namespace WASMBC
             case AST::NodeType::Ret:
             {
                 auto* ret_expr_node = node->ret.expr;
-                auto ret_expr_id = process_statement(ret_expr_node);
+                auto ret_expr_id = process_statement(ret_expr_node, fn_decl->type->ret_type);
                 local_get(ret_expr_id);
                 instr(Instruction::ret);
             } break;

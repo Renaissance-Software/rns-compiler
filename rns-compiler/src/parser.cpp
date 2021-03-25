@@ -308,23 +308,18 @@ struct Parser
 
         while ((bin_op = is_bin_op()) != BinOp::None)
         {
-            if (bin_op == BinOp::VariableDecl)
+            assert(bin_op != BinOp::VariableDecl);
+            auto* right_expression = parse_expression();
+            if (!right_expression)
             {
+                return nullptr;
             }
-            else
-            {
-                auto* right_expression = parse_expression();
-                if (!right_expression)
-                {
-                    return nullptr;
-                }
 
-                Node* node = nb.append(NodeType::BinOp);
-                node->bin_op.op = bin_op;
-                node->bin_op.left = *left_expr;
-                node->bin_op.right = right_expression;
-                *left_expr = node;
-            }
+            Node* node = nb.append(NodeType::BinOp);
+            node->bin_op.op = bin_op;
+            node->bin_op.left = *left_expr;
+            node->bin_op.right = right_expression;
+            *left_expr = node;
         }
 
         return *left_expr;
