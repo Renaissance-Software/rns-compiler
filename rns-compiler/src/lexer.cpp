@@ -5,6 +5,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#include "typechecker.h"
+
 using namespace RNS;
 #define CaseAlphabeticUpper \
 case 'A':\
@@ -100,12 +102,7 @@ case '9'
 #define NumberStart \
 DecimalDigits
 
-
-
-
 static_assert(sizeof(Token) == 2 * sizeof(s64));
-
-
 
 #define KW_DEF(x) #x
 const char* keywords[] =
@@ -119,30 +116,11 @@ KW_DEF(break),
 KW_DEF(continue),
 };
 
-#define native_type(x) #x
-const char* native_types[] =
-{
-    "", // void type, @TODO: maybe modify?
-    native_type(u8),
-    native_type(u16),
-    native_type(u32),
-    native_type(u64),
-    native_type(s8),
-    native_type(s16),
-    native_type(s32),
-    native_type(s64),
-    native_type(f32),
-    native_type(f64),
-};
-
 const auto keyword_count = rns_array_length(keywords);
-const auto native_type_count = rns_array_length(native_types);
-const auto intrinsic_count = 0;
 constexpr bool check()
 {
     constexpr bool keyword_count_check = static_cast<u8>(KeywordID::Count) == keyword_count;
-    constexpr bool native_type_count_check = static_cast<u8>(NativeTypeID::Count) == native_type_count;
-    return keyword_count_check && native_type_count;
+    return keyword_count_check;
 }
 static_assert(check());
 
@@ -152,12 +130,12 @@ struct NameMatch
     union
     {
         KeywordID keyword;
-        NativeTypeID native_type;
+        Type* type;
         IntrinsicID intrinsic;
     };
 };
 
-static inline NameMatch match_name(const char* name, u32 len)
+static inline NameMatch match_name(const char* name, u32 len, TypeBuffer& type_declarations)
 {
     for (auto i = 0; i < keyword_count; i++)
     {
@@ -169,23 +147,16 @@ static inline NameMatch match_name(const char* name, u32 len)
         }
     }
 
-    for (auto i = 0; i < native_type_count; i++)
+    auto* type = Typing::get_native_type(type_declarations, name, len);
+    if (type)
     {
-        const char* type_str = native_types[i];
-        auto type_len = strlen(type_str);
-        if (type_len == len && strncmp(type_str, name, len) == 0)
-        {
-            return { .token_id = TokenID::NativeType, .native_type = static_cast<NativeTypeID>(i) };
-        }
+        return { .token_id = TokenID::Type, .type = type };
     }
     
-    for (auto i = 0; i < intrinsic_count; i++)
-    {}
-
     return { .token_id = TokenID::Symbol };
 }
 
-TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const char* file, u32 file_size)
+TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const char* file, u32 file_size, TypeBuffer& type_declarations)
 {
     RNS_PROFILE_FUNCTION();
 
@@ -244,15 +215,15 @@ TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const cha
                 end = i;
                 i--;
                 u32 len = end - start;
-                auto match = match_name(&token_buffer.file[start], len);
+                auto match = match_name(&token_buffer.file[start], len, type_declarations);
                 Token* t = token_buffer.new_token(match.token_id, start, end, static_cast<u16>(token_buffer.line_count));
                 switch (match.token_id)
                 {
                     case TokenID::Keyword:
                         t->keyword = match.keyword;
                         break;
-                    case TokenID::NativeType:
-                        t->native_type = match.native_type;
+                    case TokenID::Type:
+                        t->type = match.type;
                         break;
                         // @TODO: intrinsics should not be names at all, they should go under the intrinsic character (presumably '@'?) switch case
                     case TokenID::Intrinsic:

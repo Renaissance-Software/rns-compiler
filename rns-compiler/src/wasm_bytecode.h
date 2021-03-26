@@ -15,6 +15,14 @@ namespace WASMBC
     {
         unreachable = 0x00,
         nop = 0x01,
+        block = 0x02,
+        loop = 0x03,
+        if_ = 0x04,
+        else_ = 0x05,
+        end_block = 0x0B,
+        br = 0xC,
+        br_if = 0x0D,
+        br_table = 0x0E,
         ret = 0x0F,
         call = 0x10,
         call_indirect = 0x11,
@@ -63,6 +71,9 @@ namespace WASMBC
 
         i32_wrap_i64 = 0xA7,
         // ...
+        ref_null = 0xD0,
+        ref_is_null = 0xD0,
+        ref_func = 0xD2,
     };
 
     struct InstructionStruct

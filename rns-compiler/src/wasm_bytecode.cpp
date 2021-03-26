@@ -1,6 +1,7 @@
-#include "bytecode.h"
+#include "wasm_bytecode.h"
 
 #include <RNS/os.h>
+#include <RNS/data_structures.h>
 #include <RNS/profiler.h>
 
 #include <stdio.h>
@@ -14,11 +15,10 @@ namespace WASMBC
     using AST::Node;
     using AST::NodeBuffer;
     using AST::FunctionDeclaration;
+    using AST::NodeType;
 
     const WASM_ID no_value = 0xcccccccc;
     const WASM_ID __stack_pointer = 66560;
-
-
 
     struct ScopeStorage
     {
@@ -40,17 +40,111 @@ namespace WASMBC
 
         void stack_allocate(u32 size);
         void instr(Instruction instruction, u32 value = no_value);
-        WASM_ID process_statement(Node* node, AST::Type* type = nullptr);
-        NativeTypeID get_type(u32 type_node_id);
+        WASM_ID process_statement(Node* node, Type* type = nullptr);
         void scan_through_function();
         void print_instructions(s64 start = 0);
-        u32 find_size(NativeTypeID native_type);
-        u32 find_size(AST::Type* type);
         void local_get(u32 index);
         u32 local_set();
         void local_set(u32 index);
         void encode(RNS::Allocator* allocator, NodeBuffer* node_buffer, InstructionBuffer* instructions, FunctionDeclaration* fn_decl);
     };
+
+    Type* get_type(AST::Node* node, Type* suggested_type = nullptr)
+    {
+        assert(node);
+        auto node_type = node->type;
+
+        switch (node_type)
+        {
+            case NodeType::VarExpr:
+            {
+                return get_type(node->var_expr.mentioned, suggested_type);
+            } break;
+            case NodeType::VarDecl:
+            {
+                auto* type = node->var_decl.type;
+                if (type)
+                {
+                    return type;
+                }
+                else
+                {
+                    // @TODO: this may cause errors
+                    node->var_decl.type = suggested_type;
+                    return suggested_type;
+                }
+            } break;
+            case NodeType::IntLit:
+            {
+                return suggested_type;
+            } break;
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
+        }
+
+        return nullptr;
+    }
+
+    u32 get_size(Type* type)
+    {
+        switch (type->id)
+        {
+            case TypeKind::Native:
+            {
+                auto native_type = type->native_t;
+                switch (native_type)
+                {
+                    case NativeTypeID::None:
+                        RNS_UNREACHABLE;
+                    case NativeTypeID::U8:
+                        return sizeof(u8);
+                    case NativeTypeID::U16:
+                        return sizeof(u16);
+                    case NativeTypeID::U32:
+                        return sizeof(u32);
+                    case NativeTypeID::U64:
+                        return sizeof(u64);
+                    case NativeTypeID::S8:
+                        return sizeof(s8);
+                    case NativeTypeID::S16:
+                        return sizeof(s16);
+                    case NativeTypeID::S32:
+                        return sizeof(s32);
+                    case NativeTypeID::S64:
+                        return sizeof(s64);
+                    case NativeTypeID::F32:
+                        return sizeof(f32);
+                    case NativeTypeID::F64:
+                        return sizeof(f64);
+                    case NativeTypeID::Count:
+                        RNS_UNREACHABLE;
+                    default:
+                        RNS_NOT_IMPLEMENTED;
+                        break;
+                }
+            } break;
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
+        }
+
+        return 0;
+    }
+
+    bool typecheck(Type* type1, Type* type2, Node* node1 = nullptr, Node* node2 = nullptr)
+    {
+        assert(type1);
+        assert(type2);
+        auto size1 = get_size(type1);
+        auto size2 = get_size(type2);
+        if (size1 != size2)
+        {
+            return false;
+        }
+
+        return type1 == type2;
+    }
 
 #define Literal(_lit_value_) { .type = OperandType::Literal, .lit = static_cast<u64>(_lit_value_) }
 #define StackPointer() { .type = OperandType::StackPointer }
@@ -71,21 +165,7 @@ namespace WASMBC
         //print_instructions(instruction_checkpoint);
     }
 
-    u32 FunctionEncoder::find_size(AST::Type* type)
-    {
-        auto type_kind = type->kind;
-        switch (type_kind)
-        {
-            case AST::TypeKind::Native:
-                return find_size(type->native_t);
-            default:
-                RNS_NOT_IMPLEMENTED;
-                break;
-        }
-        return 0;
-    }
-
-    WASM_ID FunctionEncoder::process_statement(Node* node, AST::Type* type)
+    WASM_ID FunctionEncoder::process_statement(Node* node, Type* type)
     {
         assert(node);
 
@@ -98,9 +178,9 @@ namespace WASMBC
                 auto instruction_checkpoint = instructions->len;
                 auto* var_type = node->var_decl.type;
                 assert(var_type);
-                assert(var_type->kind == AST::TypeKind::Native);
+                assert(var_type->kind == TypeKind::Native);
                 assert(var_type->native_t == NativeTypeID::S32);
-                auto var_size = find_size(var_type);
+                auto var_size = get_size(var_type);
 
                 auto var_value_node = node->var_decl.value;
                 assert(var_value_node);
@@ -117,11 +197,25 @@ namespace WASMBC
                 auto left_node = node->bin_op.left;
                 auto right_node = node->bin_op.right;
 
-                auto left_id = process_statement(left_node, type);
-                auto right_id = process_statement(right_node, type);
+                auto* left_type = get_type(left_node);
+                auto* right_type = get_type(right_node, left_type);
+                
+                assert(typecheck(left_type, right_type));
 
-                instr(Instruction::local_get, left_id);
-                instr(Instruction::local_get, right_id);
+                bool zero_cmp = binop == BinOp::Cmp_EqualZero || binop == BinOp::Cmp_EqualNotZero;
+                if (zero_cmp)
+                {
+                    auto left_id = process_statement(left_node, left_type);
+                    instr(Instruction::local_get, left_id);
+                }
+                else
+                {
+                    auto left_id = process_statement(left_node, left_type);
+                    auto right_id = process_statement(right_node, right_type);
+
+                    instr(Instruction::local_get, left_id);
+                    instr(Instruction::local_get, right_id);
+                }
 
                 switch (binop)
                 {
@@ -137,6 +231,14 @@ namespace WASMBC
                         auto sub_id = local_set();
                         return sub_id;
                     }
+                    case Lexer::BinOp::Cmp_Equal:
+                    {
+                        RNS_NOT_IMPLEMENTED;
+                    } break;
+                    case Lexer::BinOp::Cmp_EqualZero:
+                    {
+                        instr(Instruction::br_if, 0);
+                    } break;
                     case Lexer::BinOp::None:
                         RNS_UNREACHABLE;
                         break;
@@ -148,11 +250,11 @@ namespace WASMBC
             case AST::NodeType::IntLit:
             {
                 auto lit = node->int_lit.lit;
-                assert(type->kind == AST::TypeKind::Native);
+                assert(type->kind == TypeKind::Native);
 
                 switch (type->native_t)
                 {
-                    case Lexer::NativeTypeID::S32:
+                    case NativeTypeID::S32:
                     {
                         assert((s64)lit >= INT32_MIN);
                         assert(lit <= INT32_MAX);
@@ -160,8 +262,8 @@ namespace WASMBC
                         auto int_lit_id = local_set();
                         return int_lit_id;
                     }
-                    case Lexer::NativeTypeID::Count:
-                    case Lexer::NativeTypeID::None:
+                    case NativeTypeID::Count:
+                    case NativeTypeID::None:
                         RNS_UNREACHABLE;
                         break;
                     default:
@@ -197,6 +299,21 @@ namespace WASMBC
                 }
                 RNS_UNREACHABLE;
             } break;
+            case AST::NodeType::Conditional:
+            {
+                auto* condition_node = node->conditional.condition;
+                auto* if_block = node->conditional.if_block;
+                auto* else_block = node->conditional.else_block;
+
+                instr(Instruction::block);
+                if (else_block)
+                {
+                    instr(Instruction::block);
+                }
+
+                process_statement(condition_node);
+                RNS_NOT_IMPLEMENTED;
+            } break;
             default:
                 RNS_NOT_IMPLEMENTED;
                 break;
@@ -205,38 +322,8 @@ namespace WASMBC
         return no_value;
     }
 
-    u32 FunctionEncoder::find_size(NativeTypeID native_type)
+    u32 find_size(NativeTypeID native_type)
     {
-        switch (native_type)
-        {
-            case Lexer::NativeTypeID::None:
-                RNS_UNREACHABLE;
-            case Lexer::NativeTypeID::U8:
-                return sizeof(u8);
-            case Lexer::NativeTypeID::U16:
-                return sizeof(u16);
-            case Lexer::NativeTypeID::U32:
-                return sizeof(u32);
-            case Lexer::NativeTypeID::U64:
-                return sizeof(u64);
-            case Lexer::NativeTypeID::S8:
-                return sizeof(s8);
-            case Lexer::NativeTypeID::S16:
-                return sizeof(s16);
-            case Lexer::NativeTypeID::S32:
-                return sizeof(s32);
-            case Lexer::NativeTypeID::S64:
-                return sizeof(s64);
-            case Lexer::NativeTypeID::F32:
-                return sizeof(f32);
-            case Lexer::NativeTypeID::F64:
-                return sizeof(f64);
-            case Lexer::NativeTypeID::Count:
-                RNS_UNREACHABLE;
-            default:
-                RNS_NOT_IMPLEMENTED;
-                break;
-        }
 
         return 0;
     }
@@ -258,7 +345,7 @@ namespace WASMBC
             if (st_node->type == AST::NodeType::VarDecl)
             {
                 auto* type = st_node->var_decl.type;
-                auto var_size = find_size(type);
+                auto var_size = get_size(type);
                 stack_size += var_size;
             }
         }
@@ -298,7 +385,8 @@ namespace WASMBC
         bool stack_operations = stack_size > 0;
         if (stack_operations)
         {
-            stack_size = static_cast<u32>(RNS::align(stack_size, 16));
+            auto next_power_of_two = RNS::next_power_of_two(stack_size);
+            stack_size = static_cast<u32>(RNS::align(stack_size, min(next_power_of_two, (u64)16)));
             instr(Instruction::global_get, __stack_pointer);
             local_set();
             instr(Instruction::i32_const, stack_size);
@@ -362,6 +450,8 @@ namespace WASMBC
         {
 #define rns_instr_case_to_str(_instr_) case WASMBC::Instruction:: ## _instr_ : return #_instr_;
             rns_instr_case_to_str(unreachable);
+            rns_instr_case_to_str(block);
+            rns_instr_case_to_str(br_if);
             rns_instr_case_to_str(nop);
             rns_instr_case_to_str(ret);
             rns_instr_case_to_str(call);

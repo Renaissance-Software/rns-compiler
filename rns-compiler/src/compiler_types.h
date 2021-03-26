@@ -5,6 +5,106 @@
 #include <RNS/os.h>
 
 extern "C" s32 printf(const char*, ...);
+
+namespace Typing
+{
+    struct Type;
+    using TypeBuffer = RNS::Buffer<Type>;
+
+    enum class TypeID : u8
+    {
+        // Primitive types
+        HalfType = 0,
+        BFloatType,
+        FloatType,
+        DoubleType,
+        X86_FP80Type,
+        FP128Type,
+        PPC_FP128Type,
+        VoidType,
+        LabelType,
+        MetadataType,
+        X86_MMX_Type,
+        TokenType,
+
+        // Derived types
+        IntegerType,
+        FunctionType,
+        PointerType,
+        StructType,
+        ArrayType,
+        FixedVectorType,
+        ScalableVectorType,
+    };
+
+    struct FloatType
+    {
+
+    };
+    struct DoubleType
+    {
+    };
+    struct IntegerType
+    {
+        u16 bits;
+        bool is_signed;
+    };
+    struct DataStructureType
+    {
+        s64 arg_count;
+        RNS::String* field_names;
+        Type* field_types;
+    };
+
+    struct StructType : public DataStructureType
+    {
+    };
+
+    struct UnionType : public DataStructureType
+    {
+    };
+
+    struct EnumType : public DataStructureType
+    {
+    };
+
+    using TypeRefBuffer = RNS::Buffer<Type*>;
+    
+    struct FunctionType
+    {
+        TypeRefBuffer arg_types;
+        Type* ret_type;
+    };
+
+    struct PointerType
+    {
+        Type* appointee;
+        u16 bits;
+    };
+
+    struct Type
+    {
+        TypeID id;
+        union
+        {
+            IntegerType integer_t;
+            StructType struct_t;
+            UnionType union_t;
+            EnumType enum_t;
+            FunctionType function_t;
+        };
+    };
+
+    struct ConstantInt
+    {
+        u64 lit;
+        u16 bit_count;
+        bool is_signed;
+        u8 padding[5];
+    };
+    static_assert(sizeof(ConstantInt) == 2 * sizeof(s64));
+}
+using namespace Typing;
 namespace Lexer
 {
     enum class BinOp
@@ -16,13 +116,42 @@ namespace Lexer
         VariableDecl,
         Assign,
         Cmp_Equal,
+        Cmp_NotEqual,
+        Cmp_EqualZero,
+        Cmp_EqualNotZero,
+        Cmp_LessThan,
+        Cmp_GreaterThan,
+        Cmp_LessThanOrEqual,
+        Cmp_GreaterThanOrEqual,
+        Count,
     };
+
+    enum class NativeTypeID : u8
+    {
+        None,
+        U8,
+        U16,
+        U32,
+        U64,
+        S8,
+        S16,
+        S32,
+        S64,
+        F32,
+        F64,
+        Count,
+    };
+
+    inline bool is_cmp_binop(BinOp binop)
+    {
+        return binop >= BinOp::Cmp_Equal && binop <= BinOp::Cmp_GreaterThanOrEqual;
+    }
 
     enum class TokenID : u8
     {
         /* These are names */
         Keyword,
-        NativeType,
+        Type,
         Intrinsic,
         Symbol,
 
@@ -141,21 +270,6 @@ namespace Lexer
         Count,
     };
 
-    enum class NativeTypeID : u8
-    {
-        None,
-        U8,
-        U16,
-        U32,
-        U64,
-        S8,
-        S16,
-        S32,
-        S64,
-        F32,
-        F64,
-        Count,
-    };
 
     enum class IntrinsicID : u8
     {
@@ -176,7 +290,7 @@ namespace Lexer
             char* str_lit;
             char* symbol;
             KeywordID keyword;
-            NativeTypeID native_type;
+            Type* type;
             IntrinsicID intrinsic;
         };
 
@@ -194,8 +308,8 @@ namespace Lexer
                 case Lexer::TokenID::Keyword:
                     printf("Keyword\n");
                     break;
-                case Lexer::TokenID::NativeType:
-                    printf("NativeType\n");
+                case Lexer::TokenID::Type:
+                    printf("Type\n");
                     break;
                 case Lexer::TokenID::Intrinsic:
                     printf("Intrinsic\n");
@@ -250,12 +364,16 @@ namespace Lexer
 
 using namespace Lexer;
 
+
 namespace AST
 {
     inline const u32 no_value = UINT32_MAX;
-    struct TokenParser
-    {
-    };
+
+    struct Node;
+    using NodeSlice = RNS::Buffer<Node>;
+    using FieldNames = RNS::Slice<RNS::String>;
+    using FieldTypes = RNS::Slice<Type>;
+
     enum class NodeType
     {
         IntLit,
@@ -263,14 +381,10 @@ namespace AST
         Ret,
         VarDecl,
         VarExpr,
-        Scope,
+        ScopeBlock,
+        Conditional,
     };
 
-    struct Node;
-    struct IntLiteral
-    {
-        u64 lit;
-    };
 
     struct BinaryOp
     {
@@ -282,34 +396,6 @@ namespace AST
     struct RetExpr
     {
         Node* expr;
-    };
-
-    enum class TypeKind
-    {
-        Unknown,
-        Native,
-        Struct,
-        Union,
-        Enum,
-        Function,
-    };
-
-    struct StructType;
-    struct UnionType;
-    struct EnumType;
-    struct FunctionType;
-
-    struct Type
-    {
-        TypeKind kind;
-        union
-        {
-            Lexer::NativeTypeID native_t;
-            StructType* struct_t;
-            UnionType* union_t;
-            EnumType* enum_t;
-            FunctionType* function_t;
-        };
     };
 
     struct VarDecl
@@ -326,38 +412,10 @@ namespace AST
         Node* mentioned;
     };
 
-    using NodeSlice = RNS::Buffer<Node>;
-    using FieldNames = RNS::Slice<RNS::String>;
-    using FieldTypes = RNS::Slice<Type>;
-
-    struct DataStructureType
-    {
-        s64 arg_count;
-        RNS::String* field_names;
-        Type* field_types;
-    };
-
-    struct StructType : public DataStructureType
-    {
-    };
-
-    struct UnionType : public DataStructureType
-    {
-    };
-
-    struct EnumType : public DataStructureType
-    {
-    };
-
-    using TypeRefBuffer = RNS::Buffer<Type*>;
-    struct FunctionType
-    {
-        TypeRefBuffer arg_types;
-        Type* ret_type;
-    };
 
     enum class ScopeType
     {
+        ConditionalBlock,
         Function,
     };
 
@@ -374,6 +432,13 @@ namespace AST
         NodeRefBuffer statements;
     };
 
+    struct Conditional
+    {
+        Node* condition;
+        Node* if_block;
+        Node* else_block;
+    };
+
     struct FunctionDeclaration
     {
         // @TODO: consider: right now normal functions use anonymous function types
@@ -387,12 +452,13 @@ namespace AST
         NodeType type;
         union
         {
-            IntLiteral int_lit;
+            ConstantInt int_lit;
             BinaryOp bin_op;
             RetExpr ret;
             VarDecl var_decl;
             VarExpr var_expr;
             ScopeBlock scope;
+            Conditional conditional;
         };
     };
 
@@ -408,42 +474,7 @@ namespace AST
         }
     };
 
-#if 0
-    struct NodeIDBuffer
-    {
-        // @Info: this is the node pointer for the args
-        u32* ptr;
-        s64 len;
-        s64 cap;
-
-        static NodeIDBuffer create(RNS::Allocator* allocator)
-        {
-            NodeIDBuffer ab =
-            {
-                .ptr = (u32*)(allocator->pool.ptr + allocator->pool.used),
-                .len = 0,
-                .cap = (allocator->pool.cap - allocator->pool.used) / (s64)sizeof(u32),
-            };
-
-            return ab;
-        }
-
-        // @Info: this function is a bit tricky since it returns an index inside this buffer, not the actual value.
-        // The user is responsible for getting the offset of the first entry added in question and substracting it
-        // from the buffer final free address
-        // @SingleThreaded
-        s64 append(u32 value)
-        {
-            assert(len + 1 < cap);
-            s64 index = len++;
-            ptr[index] = value;
-            return index;
-        }
-    };
-#endif
-
     using FunctionDeclarationBuffer = RNS::Buffer<FunctionDeclaration>;
-    using TypeBuffer = RNS::Buffer<Type>;
     using StructBuffer = RNS::Buffer<StructType>;
     using UnionBuffer = RNS::Buffer<UnionType>;
     using EnumBuffer = RNS::Buffer<EnumType>;
@@ -465,182 +496,3 @@ namespace AST
     };
 }
 
-namespace Bytecode
-{
-    inline const s64 no_value = INT64_MAX;
-    inline const char* type_to_string(NativeTypeID id)
-    {
-        switch (id)
-        {
-            rns_case_to_str(NativeTypeID::None);
-            rns_case_to_str(NativeTypeID::U8);
-            rns_case_to_str(NativeTypeID::U16);
-            rns_case_to_str(NativeTypeID::U32);
-            rns_case_to_str(NativeTypeID::U64);
-            rns_case_to_str(NativeTypeID::S8);
-            rns_case_to_str(NativeTypeID::S16);
-            rns_case_to_str(NativeTypeID::S32);
-            rns_case_to_str(NativeTypeID::S64);
-            rns_case_to_str(NativeTypeID::F32);
-            rns_case_to_str(NativeTypeID::F64);
-            default:
-                RNS_NOT_IMPLEMENTED;
-                return nullptr;
-        }
-    }
-    enum class OperandType
-    {
-        Invalid,
-        New,
-        StackAddress,
-        IntLit,
-    };
-
-    inline const char* operand_type_to_string(OperandType type)
-    {
-        switch (type)
-        {
-            rns_case_to_str(OperandType::Invalid);
-            rns_case_to_str(OperandType::New);
-            rns_case_to_str(OperandType::StackAddress);
-            rns_case_to_str(OperandType::IntLit);
-            default:
-                RNS_NOT_IMPLEMENTED;
-                return nullptr;
-        }
-    }
-
-    struct Stack
-    {
-        s64 id;
-    };
-
-    struct PrintBuffer
-    {
-        char ptr[512];
-    };
-
-    struct Value
-    {
-        NativeTypeID type;
-        OperandType op_type;
-        union
-        {
-            AST::IntLiteral int_lit;
-            Stack stack;
-        };
-
-        PrintBuffer to_string(s64 id);
-    };
-
-    struct ValueBuffer
-    {
-        Value* ptr;
-        s64 len;
-        s64 cap;
-
-        static ValueBuffer create(RNS::Allocator* allocator)
-        {
-            ValueBuffer buffer = {
-                .ptr = reinterpret_cast<Value*>(allocator->pool.ptr + allocator->pool.used),
-                .len = 0,
-                .cap = (allocator->pool.cap - allocator->pool.used) / static_cast<s64>(sizeof(ValueBuffer)),
-            };
-
-            return buffer;
-        }
-
-        inline s64 append(Value value)
-        {
-            assert(len + 1 < cap);
-            s64 index = len++;
-            ptr[index] = value;
-            return index;
-        }
-
-        inline Value* get(s64 id)
-        {
-            return &ptr[id];
-        }
-    };
-
-    inline PrintBuffer value_id_to_string(ValueBuffer* vb, s64 id)
-    {
-        PrintBuffer bf;
-        if (id != Bytecode::no_value)
-        {
-            Value* v = vb->get(id);
-            bf = v->to_string(id);
-        }
-        else
-        {
-            strcpy(bf.ptr, "NULL");
-        }
-        return bf;
-    }
-
-    enum class InstructionID
-    {
-        Invalid,
-        Add,
-        Assign,
-        Decl,
-        Ret,
-    };
-
-    struct Instruction
-    {
-        s64 operands[2];
-        s64 result;
-        InstructionID id;
-
-        void print(ValueBuffer* vb);
-
-        const char* id_to_string()
-        {
-            switch (id)
-            {
-                rns_case_to_str(InstructionID::Add);
-                rns_case_to_str(InstructionID::Assign);
-                rns_case_to_str(InstructionID::Decl);
-                rns_case_to_str(InstructionID::Ret);
-                default:
-                    RNS_NOT_IMPLEMENTED;
-                    return nullptr;
-            }
-        }
-    };
-
-    struct InstructionBuffer
-    {
-        Instruction* ptr;
-        s64 len;
-        s64 cap;
-
-        static InstructionBuffer create(RNS::Allocator* allocator)
-        {
-            InstructionBuffer ib =
-            {
-                .ptr = (Instruction*)(allocator->pool.ptr + allocator->pool.used),
-                .len = 0,
-                .cap = (allocator->pool.cap - allocator->pool.used) / (s64)sizeof(Instruction),
-            };
-
-            return ib;
-        }
-
-        inline s64 append(Instruction instruction)
-        {
-            assert(len + 1 < cap);
-            s64 index = len++;
-            ptr[index] = instruction;
-            return index;
-        }
-    };
-
-    struct IR
-    {
-        InstructionBuffer ib;
-        ValueBuffer vb;
-    };
-}

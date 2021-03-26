@@ -6,8 +6,9 @@
     <ClCompile Include="dependencies\rns-lib\lib\src\data_structures.cpp" />
     <ClCompile Include="src\lexer.cpp" />
     <ClCompile Include="src\parser.cpp" />
-    <ClCompile Include="src\bytecode.cpp" />
     <ClCompile Include="src\x86_64.cpp" />
+    <ClCompile Include="src\llvm_bytecode.cpp" />
+    <ClCompile Include="src\typechecker.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\lexer.h" />
@@ -15,7 +16,8 @@
     <ClInclude Include="src\compiler_types.h" />
     <ClInclude Include="src\x86_64_encoding.h" />
     <ClInclude Include="src\x86_64.h" />
-    <ClInclude Include="src\bytecode.h" />
     <ClInclude Include="dependencies\rns-lib\lib\include\RNS\profiler.h" />
+    <ClInclude Include="src\llvm_bytecode.h" />
+    <ClInclude Include="src\typechecker.h" />
   </ItemGroup>
 </Project>

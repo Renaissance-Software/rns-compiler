@@ -5,7 +5,7 @@
 #include <RNS/os_internal.h>
 #include <RNS/profiler.h>
 
-#include "bytecode.h"
+#include "wasm_bytecode.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -4177,6 +4177,7 @@ s32 x86_64_test_main(s32 argc, char* argv[])
 }
 
 
+#if 0
 using WASMInstruction = WASMBC::InstructionStruct;
 using WASMInstructionBuffer = Buffer<WASMInstruction>;
 
@@ -4559,4 +4560,10 @@ void jit_wasm(WASMBC::InstructionBuffer* wasm_instructions, WASMBC::WASM_ID stac
 
     auto a = 5; auto b = a + 4; auto expected = b - a + 2 + 3;
     assert(result == expected);
+}
+#endif
+
+void jit_llvm_ir()
+{
+
 }

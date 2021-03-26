@@ -67,6 +67,17 @@ struct Parser
         return nullptr;
     }
 
+    inline Token* expect_and_consume_if_keyword(KeywordID keyword)
+    {
+        auto* t = expect(TokenID::Keyword);
+        if (t && t->keyword == keyword)
+        {
+            consume();
+            return t;
+        }
+        return nullptr;
+    }
+
     template<typename T>
     inline bool expect_and_consume_twice(T id1, T id2)
     {
@@ -117,7 +128,7 @@ struct Parser
                 break;
             case TokenID::Equal:
                 consume();
-                if (expect('='))
+                if (expect_and_consume('='))
                 {
                     return BinOp::Cmp_Equal;
                 }
@@ -167,9 +178,9 @@ struct Parser
 
     Type* get_type(Token* t)
     {
-        if (t->get_id() == TokenID::NativeType)
+        if (t->get_id() == TokenID::Type)
         {
-            return get_native_type(t->native_type);
+            return t->type;
         }
         else if (t->get_id() == TokenID::Symbol)
         {
@@ -254,6 +265,73 @@ struct Parser
         return nullptr;
     }
 
+    Node* parse_conditional()
+    {
+        consume();
+        auto* node = nb.append(NodeType::Conditional);
+
+        node->conditional.condition = parse_expression();
+        assert(node->conditional.condition);
+
+        bool braces = expect_and_consume('{');
+
+        node->conditional.if_block = nb.append(NodeType::ScopeBlock);
+        auto* if_node = node->conditional.if_block;
+        if_node->scope.parent = current_scope;
+        if_node->scope.type = ScopeType::ConditionalBlock;
+        current_scope = &if_node->scope;
+
+        if (braces)
+        {
+            if_node->scope.statements = if_node->scope.statements.create(this->general_allocator, 128);
+            while (!expect_and_consume('}'))
+            {
+                auto* st_node = parse_statement();
+                assert(st_node);
+                if_node->scope.statements.append(st_node);
+            }
+        }
+        else
+        {
+            if_node->scope.statements = if_node->scope.statements.create(this->general_allocator, 1);
+            auto* st_node = parse_statement();
+            if_node->scope.statements.append(st_node);
+        }
+
+        current_scope = static_cast<ScopeBlock*>(current_scope->parent);
+
+        if (expect_and_consume_if_keyword(KeywordID::Else))
+        {
+            node->conditional.else_block = nb.append(NodeType::ScopeBlock);
+            auto* else_node = node->conditional.else_block;
+            else_node->scope.parent = current_scope;
+            else_node->scope.type = ScopeType::ConditionalBlock;
+            current_scope = &else_node->scope;
+
+            braces = expect_and_consume('{');
+            if (braces)
+            {
+                else_node->scope.statements = else_node->scope.statements.create(this->general_allocator, 128);
+                while (!expect_and_consume('}'))
+                {
+                    auto* st_node = parse_statement();
+                    assert(st_node);
+                    else_node->scope.statements.append(st_node);
+                }
+            }
+            else
+            {
+                else_node->scope.statements = else_node->scope.statements.create(this->general_allocator, 1);
+                auto* st_node = parse_statement();
+                assert(st_node);
+                else_node->scope.statements.append(st_node);
+            }
+            current_scope = static_cast<ScopeBlock*>(current_scope->parent);
+        }
+
+        return node;
+    }
+
     Node* parse_statement()
     {
         auto* t = get_next_token();
@@ -268,8 +346,13 @@ struct Parser
                 switch (keyword)
                 {
                     case KeywordID::Return:
+                    {
                         statement = parse_return();
-                        break;
+                    } break;
+                    case KeywordID::If:
+                    {
+                        statement = parse_conditional();
+                    } break;
                     default:
                         RNS_NOT_IMPLEMENTED;
                         break;
@@ -316,6 +399,40 @@ struct Parser
             }
 
             Node* node = nb.append(NodeType::BinOp);
+            bool left_node_zero = (*left_expr)->type == NodeType::IntLit && (*left_expr)->int_lit.lit == 0;
+            bool right_node_zero = right_expression->type == NodeType::IntLit && right_expression->int_lit.lit == 0;
+            bool cmp_zero = is_cmp_binop(bin_op) && (left_node_zero || right_node_zero);
+
+            if (cmp_zero)
+            {
+                if (right_node_zero)
+                {
+                    switch (bin_op)
+                    {
+                        case BinOp::Cmp_Equal:
+                        {
+                            bin_op = BinOp::Cmp_EqualZero;
+                        } break;
+                        default:
+                            RNS_NOT_IMPLEMENTED;
+                            break;
+                    }
+                }
+                else if (left_node_zero)
+                {
+                    switch (bin_op)
+                    {
+                        default:
+                            RNS_NOT_IMPLEMENTED;
+                            break;
+                    }
+                }
+                else
+                {
+                    RNS_UNREACHABLE;
+                }
+            }
+
             node->bin_op.op = bin_op;
             node->bin_op.left = *left_expr;
             node->bin_op.right = right_expression;
@@ -337,7 +454,7 @@ struct Parser
             Token* t;
             Node* var_decl_node = left;
 
-            if ((t = expect_and_consume(TokenID::NativeType)) || (t = expect_and_consume(TokenID::Symbol)))
+            if ((t = expect_and_consume(TokenID::Type)) || (t = expect_and_consume(TokenID::Symbol)))
             {
                 var_decl_node->var_decl.type = get_type(t);
             }
@@ -426,7 +543,7 @@ struct Parser
 
         if (expect_and_consume('-') && expect_and_consume('>'))
         {
-            auto* t = expect_and_consume(TokenID::NativeType);
+            auto* t = expect_and_consume(TokenID::Type);
             if (!t)
             {
                 t = expect_and_consume(TokenID::Symbol);
@@ -661,11 +778,14 @@ Result parse(TokenBuffer* tb, RNS::Allocator* node_allocator, RNS::Allocator* fu
         .error_message = error_message,
     };
 
+    // @TODO: Come back here when there's an error @Type
+#if 0
     // Register native types
     for (auto i = 0; i < (u8)NativeTypeID::Count; i++)
     {
         parser.type_declarations.append({ .kind = TypeKind::Native, .native_t = static_cast<NativeTypeID>(i) });
     }
+#endif
 
     while (parser.parser_it < parser.len)
     {

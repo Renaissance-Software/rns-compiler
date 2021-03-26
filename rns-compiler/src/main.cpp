@@ -11,9 +11,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "typechecker.h"
 #include "lexer.h"
 #include "parser.h"
-#include "bytecode.h"
+#include "llvm_bytecode.h"
 #if USE_LLVM
 #include "llvm_backend.h"
 #endif
@@ -64,16 +65,20 @@ s32 rns_main(s32 argc, char* argv[])
     file_ptr = file_buffer.ptr;
     file_len = static_cast<u32>(file_buffer.len);
 #else
-    const char file[] = "main :: () -> s32 { a : s32 = 5; b: s32 = a + 4; return b - a + 2 + 3; }";
+    const char file[] = "main :: () -> s32 { return 0; }";
 
     file_ptr = file;
     file_len = rns_array_length(file);
 #endif
 
+    DebugAllocator type_allocator = create_allocator(RNS_MEGABYTE(5));
+    TypeBuffer type_declarations = TypeBuffer::create(&type_allocator, 1024);
+    register_native_types(type_declarations);
+
     DebugAllocator lexer_allocator = create_allocator(RNS_MEGABYTE(100));
     DebugAllocator name_allocator = create_allocator(RNS_MEGABYTE(20));
 
-    TokenBuffer tb = lex(&lexer_allocator, &name_allocator, file_ptr, file_len);
+    TokenBuffer tb = lex(&lexer_allocator, &name_allocator, file_ptr, file_len, type_declarations);
 
     DebugAllocator node_allocator = create_allocator(RNS_MEGABYTE(200));
     DebugAllocator function_allocator = create_allocator(RNS_MEGABYTE(100));
@@ -90,20 +95,20 @@ s32 rns_main(s32 argc, char* argv[])
 
 #if USE_LLVM
     CompilerIR compiler_ir = CompilerIR::LLVM;
-    LLVM::encode(&parser, &ir_allocator);
+    LLVM::encode(&bc_allocator, &parser_result);
 #else
-    CompilerIR compiler_ir = CompilerIR::WASM;
+    CompilerIR compiler_ir = CompilerIR::LLVM_CUSTOM;
     switch (compiler_ir)
     {
         case CompilerIR::WASM:
         {
-            auto wasm_result = WASMBC::encode(&parser_result, &bc_allocator);
-            DebugAllocator mc_allocator = create_allocator(RNS_MEGABYTE(100));
-            jit_wasm(&wasm_result.ib, wasm_result.stack_pointer_id);
+            //auto wasm_result = WASMBC::encode(&parser_result, &bc_allocator);
+            //DebugAllocator mc_allocator = create_allocator(RNS_MEGABYTE(100));
+            //jit_wasm(&wasm_result.ib, wasm_result.stack_pointer_id);
         } break;
         case CompilerIR::LLVM_CUSTOM:
         {
-            //LLVMIR::encode(&parser, &ir_allocator);
+            LLVM::encode(&bc_allocator, parser_result.node_buffer, parser_result.function_type_declarations, parser_result.type_declarations, parser_result.function_declarations);
         } break;
         default:
             RNS_UNREACHABLE;

@@ -2,7 +2,9 @@
 #include <RNS/types.h>
 #include "compiler_types.h"
 
+struct RNS::Allocator;
+
 namespace LLVM
 {
-    void encode(Parser::Parser* module_parser, RNS::Allocator* allocator);
+    void encode(RNS::Allocator* allocator, AST::Result* parser_result);
 }
