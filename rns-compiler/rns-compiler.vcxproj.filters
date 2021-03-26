@@ -9,6 +9,7 @@
     <ClCompile Include="src\x86_64.cpp" />
     <ClCompile Include="src\llvm_bytecode.cpp" />
     <ClCompile Include="src\typechecker.cpp" />
+    <ClCompile Include="src\compiler_types.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\lexer.h" />

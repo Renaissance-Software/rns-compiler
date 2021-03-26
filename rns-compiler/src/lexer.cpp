@@ -156,27 +156,30 @@ static inline NameMatch match_name(const char* name, u32 len, TypeBuffer& type_d
     return { .token_id = TokenID::Symbol };
 }
 
-TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const char* file, u32 file_size, TypeBuffer& type_declarations)
+TokenBuffer lex(Compiler& compiler, TypeBuffer& type_declarations, RNS::String file_content)
 {
     RNS_PROFILE_FUNCTION();
 
-    s64 tokens_to_allocate = 64 + ((s64)file_size / 2);
+    Allocator token_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(100));
+    Allocator name_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(100));
+
+    s64 tokens_to_allocate = 64 + ((s64)file_content.len / 2);
     s64 chars_to_allocate_in_string_buffer = 64 + (tokens_to_allocate / 5);
     TokenBuffer token_buffer = {
-        .ptr = new(token_allocator) Token[tokens_to_allocate],
+        .ptr = new(&token_allocator) Token[tokens_to_allocate],
         .len = 0,
         .cap = tokens_to_allocate,
-        .file_size = file_size,
-        .file = file,
-        .sb = StringBuffer::create(name_allocator, chars_to_allocate_in_string_buffer),
+        .file_size = file_content.len,
+        .file = file_content.ptr,
+        .sb = StringBuffer::create(&name_allocator, chars_to_allocate_in_string_buffer),
     };
 
 
     Token* token = nullptr;
 
-    for (u32 i = 0; i < file_size; i++)
+    for (u32 i = 0; i < file_content.len; i++)
     {
-        char c = file[i];
+        char c = file_content[i];
         u32 start;
         u32 end;
 
@@ -188,7 +191,7 @@ TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const cha
                     token_buffer.line_count++;
                     assert(token_buffer.line_count <= UINT16_MAX);
                 case ' ':
-                    c = file[++i];
+                    c = file_content[++i];
                     break;
                 default:
                     goto end_blank;
@@ -208,7 +211,7 @@ TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const cha
                     SymbolEnd:
                         goto end_symbol;
                         default:
-                            c = file[++i];
+                            c = file_content[++i];
                     }
                 }
             end_symbol:
@@ -251,7 +254,7 @@ TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const cha
                     NumberStart:
                         number_buffer[number_buffer_len++] = c;
                         assert(number_buffer_len + 1 <= number_buffer_max_digits);
-                        c = file[++i];
+                        c = file_content[++i];
                         break;
                         default:
                             goto end_number;
@@ -272,7 +275,7 @@ TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const cha
 
                 do
                 {
-                    c = file[++i];
+                    c = file_content[++i];
                 } while (c != '\"');
 
                 end = i + 1;
@@ -284,7 +287,7 @@ TokenBuffer lex(Allocator* token_allocator, Allocator* name_allocator, const cha
             case '\'':
             {
                 start = i;
-                char char_lit = file[++i];
+                char char_lit = file_content[++i];
                 end = ++i;
 
                 Token* t = token_buffer.new_token(TokenID::CharLit, start, end, static_cast<u16>(token_buffer.line_count));

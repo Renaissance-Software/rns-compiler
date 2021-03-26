@@ -4,6 +4,8 @@
 #include <RNS/data_structures.h>
 #include <RNS/os.h>
 
+using RNS::Allocator;
+
 extern "C" s32 printf(const char*, ...);
 
 namespace Typing
@@ -487,12 +489,37 @@ namespace AST
         // @Info: this includes native types
         TypeBuffer type_declarations;
         FunctionDeclarationBuffer function_declarations;
-        const char* error_message;
-
-        bool failed()
-        {
-            return error_message;
-        }
     };
 }
 
+namespace RNS
+{
+    struct MetaContext
+    {
+        const char* filename;
+        const char* function_name;
+        u32 line_number;
+        u32 column_number;
+    };
+
+    struct Compiler
+    {
+        enum class Subsystem : u8
+        {
+            Lexer,
+            Parser,
+            IR,
+            MachineCodeGen,
+            Count,
+        };
+
+        RNS::Allocator page_allocator;
+        RNS::Allocator common_allocator;
+        Subsystem subsystem;
+        bool errors_reported;
+
+        void print_error(MetaContext context, const char* message, ...);
+    };
+}
+
+using RNS::Compiler;

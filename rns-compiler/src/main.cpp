@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "compiler_types.h"
 #include "typechecker.h"
 #include "lexer.h"
 #include "parser.h"
@@ -45,10 +46,9 @@ s32 rns_main(s32 argc, char* argv[])
     PerformanceAPI_BeginEvent("Main function", nullptr, PERFORMANCEAPI_DEFAULT_COLOR);
 #endif
 
-    char error_message[1024]{};
+    char print_error[1024]{};
 #define READ_FROM_FILE 0
-    const char* file_ptr;
-    u32 file_len;
+    RNS::String file;
 #if READ_FROM_FILE
     const char* filename = argv[1];
     assert(filename);
@@ -62,36 +62,36 @@ s32 rns_main(s32 argc, char* argv[])
         return -1;
     }
 
-    file_ptr = file_buffer.ptr;
-    file_len = static_cast<u32>(file_buffer.len);
+    file.ptr = file_buffer.ptr;
+    file.len = static_cast<u32>(file_buffer.len);
 #else
-    const char file[] = "main :: () -> s32 { return 0; }";
+    const char file_content[] = "main :: () -> s32 { return 0; }";
 
-    file_ptr = file;
-    file_len = rns_array_length(file);
+    file.ptr = (char*)file_content;
+    file.len = rns_array_length(file);
 #endif
 
-    DebugAllocator type_allocator = create_allocator(RNS_MEGABYTE(5));
+    Compiler compiler = {
+        .page_allocator = default_create_allocator(RNS_GIGABYTE(1)),
+        .common_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(100)),
+        .subsystem = Compiler::Subsystem::Lexer,
+        .errors_reported = false,
+    };
+
+    Allocator type_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(5));
     TypeBuffer type_declarations = TypeBuffer::create(&type_allocator, 1024);
     register_native_types(type_declarations);
 
-    DebugAllocator lexer_allocator = create_allocator(RNS_MEGABYTE(100));
-    DebugAllocator name_allocator = create_allocator(RNS_MEGABYTE(20));
+    TokenBuffer tb = lex(compiler, type_declarations, file);
 
-    TokenBuffer tb = lex(&lexer_allocator, &name_allocator, file_ptr, file_len, type_declarations);
-
-    DebugAllocator node_allocator = create_allocator(RNS_MEGABYTE(200));
-    DebugAllocator function_allocator = create_allocator(RNS_MEGABYTE(100));
-    DebugAllocator general_allocator = create_allocator(RNS_MEGABYTE(100));
-
-    auto parser_result = parse(&tb, &node_allocator, &function_allocator, &general_allocator, error_message);
-    if (parser_result.failed())
+    auto parser_result = parse(compiler, tb);
+    if (compiler.errors_reported)
     {
-        printf("Parsing failed. Error message: %s\n", parser_result.error_message);
+        printf("Parsing failed.\n");
         return -1;
     }
 
-    DebugAllocator bc_allocator = create_allocator(RNS_MEGABYTE(100));
+    Allocator bc_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(100));
 
 #if USE_LLVM
     CompilerIR compiler_ir = CompilerIR::LLVM;

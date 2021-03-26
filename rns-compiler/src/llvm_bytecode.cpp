@@ -175,22 +175,58 @@ namespace LLVM
 
     bool typecheck(Type* type, LLVM::Value* value)
     {
-        return false;
+        switch (value->id)
+        {
+            case ValueID::Constant:
+            {
+                switch (value->constant.id)
+                {
+                    case ConstantID::Int:
+                    {
+                        if (type->id != TypeID::IntegerType)
+                        {
+                            return false;
+                        }
+                        if (value->constant.integer.is_signed && !type->integer_t.is_signed)
+                        {
+                            return false;
+                        }
+                        // @TODO: we can check integer type limits here
+                    } break;
+                    default:
+                        RNS_NOT_IMPLEMENTED;
+                        break;
+                }
+            } break;
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
+        }
+
+        return true;
     }
 
-    Value* node_to_bytecode_value(Allocator* allocator, NodeBuffer& node_buffer, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node)
+    using TypecheckingFunction = bool(Type*, LLVM::Value*);
+    Value* node_to_bytecode_value(Allocator* allocator, NodeBuffer& node_buffer, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node, TypecheckingFunction* typechecking_fn = nullptr, Type* type_to_typecheck = nullptr)
     {
         switch (node->type)
         {
             case NodeType::IntLit:
             {
                 Value* value = new(allocator) Value;
+                assert(value);
                 *value = {
+                    .id = ValueID::Constant,
                     .constant = {
                         .id = ConstantID::Int,
                         .integer = node->int_lit,
                     }
                 };
+                if (typechecking_fn)
+                { 
+                    assert(type_to_typecheck);
+                    assert(typechecking_fn(type_to_typecheck, value));
+                }
                 return value;
             } break;
             default:
@@ -204,6 +240,7 @@ namespace LLVM
     void do_statement_node(Allocator* allocator, Buffer<InstructionInfo>& llvm_instructions, NodeBuffer& node_buffer, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node)
     {
         InstructionInfo instruction;
+
         switch (node->type)
         {
             case NodeType::VarDecl:
@@ -225,7 +262,7 @@ namespace LLVM
                 instruction.id = Instruction::Ret;
                 if (ret_expr)
                 {
-                    auto* ret_value = node_to_bytecode_value(allocator, node_buffer, type_declarations, current_function, ret_expr);
+                    auto* ret_value = node_to_bytecode_value(allocator, node_buffer, type_declarations, current_function, ret_expr, typecheck, current_function.type->ret_type);
                     instruction.ret = {
                         .type = nullptr,
                         .value = ret_value,

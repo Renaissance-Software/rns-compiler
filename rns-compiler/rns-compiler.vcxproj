@@ -21,6 +21,7 @@
   <ItemGroup>
     <ClCompile Include="dependencies\rns-lib\lib\src\data_structures.cpp" />
     <ClCompile Include="dependencies\rns-lib\lib\src\os.cpp" />
+    <ClCompile Include="src\compiler_types.cpp" />
     <ClCompile Include="src\lexer.cpp" />
     <ClCompile Include="src\llvm_bytecode.cpp" />
     <ClCompile Include="src\main.cpp" />

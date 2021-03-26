@@ -57,14 +57,8 @@ bool fits_into(T number, usize size, bool signedness)
     return false;
 }
 
-struct MetaContext
-{
-    const char* filename;
-    const char* function_name;
-    s32 line_number;
-};
 
-#define METACONTEXT { __FILE__,  __func__, __LINE__ }
+#define METACONTEXT { __FILE__,  __func__, (u32)__LINE__ }
 
 enum class CallingConvention
 {
@@ -1420,7 +1414,7 @@ Value* C_function_import(Allocator* allocator, DescriptorBuffer* descriptor_buff
     ++symbol_name_start;
     
     u64 length = symbol_name_end - symbol_name_start;
-    char* symbol_name = reinterpret_cast<char*>(allocator->allocate(length + 1).ptr);
+    char* symbol_name = reinterpret_cast<char*>(allocator->allocate(allocator, length + 1).ptr);
     memcpy(symbol_name, symbol_name_start, length);
     symbol_name[length] = 0;
 
@@ -3670,7 +3664,6 @@ TestEncodingFn(test_shared_library)
 
 
 using RNS::Allocator;
-using RNS::DebugAllocator;
 
 #define file_offset_to_rva(_section_header_)\
     (static_cast<DWORD>(file_buffer.len) - (_section_header_)->PointerToRawData + (_section_header_)->VirtualAddress)
@@ -4111,16 +4104,9 @@ struct TestSuite
 
 s32 x86_64_test_main(s32 argc, char* argv[])
 {
-    DebugAllocator test_allocator = {};
-    DebugAllocator virtual_allocator = {};
-
     s64 test_allocator_size = 1024*1024*1024;
-
-    void* address = RNS::virtual_alloc(nullptr, test_allocator_size, { .commit = 1, .reserve = 1, .execute = 0, .read = 1, .write = 1 });
-    test_allocator.pool = { (u8*)address, 0, test_allocator_size };
-    void* execution_address = RNS::virtual_alloc(nullptr, test_allocator_size, { .commit = 1, .reserve = 1, .execute = 1, .read = 1, .write = 1 });
-    virtual_allocator = virtual_allocator.create(execution_address, test_allocator_size);
-
+    Allocator test_allocator = default_create_allocator(test_allocator_size);
+    Allocator virtual_allocator = default_create_execution_allocator(test_allocator_size);
 
     s64 value_count = 10000;
     s64 descriptor_count = 1000;
