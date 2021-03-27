@@ -6,6 +6,7 @@
 namespace LLVM
 {
     using namespace RNS;
+    using LLVMID = u32;
 
     enum class Instruction : u8
     {
@@ -93,17 +94,6 @@ namespace LLVM
         Freeze = 67,
     };
 
-    enum class ValueID : u8
-    {
-        Memory,
-        Global,
-        Constant,
-        Instruction,
-        Metadata,
-        InlineASM,
-        Argument,
-        BasicBlock,
-    };
 
     enum class GlobalValue : u8
     {
@@ -154,22 +144,291 @@ namespace LLVM
         Value* value;
     };
 
-    struct InstructionInfo
+    // @Info: these do not form part of the instruction buffer since they need to be allocated at the top of the function
+    struct Alloca
     {
-        Instruction id;
-        union
-        {
-            Ret ret;
-        };
+        Type* type;
+        LLVMID index;
+        u32 count;
+        u32 alignment;
     };
+
+    struct InstructionInfo;
+    struct Store
+    {
+        Type* type;
+        Value* value_to_be_stored;
+        InstructionInfo* alloca_i;
+        u32 alignment;
+    };
+
+    enum class ValueID : u8
+    {
+        Memory,
+        Global,
+        Constant,
+        Instruction,
+        Metadata,
+        InlineASM,
+        Argument,
+        BasicBlock,
+    };
+
+    struct InstructionInfo;
+    const char* instruction_to_string_for_value(InstructionInfo* instruction);
 
     struct Value
     {
         ValueID id;
         union
         {
+            InstructionInfo* instruction;
             Constant constant;
         };
+
+        const char* to_string()
+        {
+            switch (id)
+            {
+                case ValueID::Constant:
+                {
+                    switch (constant.id)
+                    {
+                        case ConstantID::Int:
+                        {
+                            return "int_lit";
+                        } break;
+                        default:
+                        {
+                            RNS_NOT_IMPLEMENTED;
+                        } break;
+                    }
+                } break;
+                case ValueID::Instruction:
+                {
+                    return instruction_to_string_for_value(instruction);
+                }
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+
+            return nullptr;
+        }
+    };
+
+    const char* type_to_string(Type* type)
+    {
+        switch (type->id)
+        {
+            case TypeID::IntegerType:
+            {
+                switch (type->integer_t.bits)
+                {
+                    case 32:
+                    {
+                        return "i32";
+                    }
+                    default:
+                    {
+                        RNS_NOT_IMPLEMENTED;
+                    } break;
+                }
+            } break;
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
+        }
+        return nullptr;
+    }
+
+    struct InstructionInfo
+    {
+        Instruction id;
+        union
+        {
+            Ret ret;
+            Alloca alloca_i;
+            Store store;
+        };
+
+        void print()
+        {
+            switch (id)
+            {
+                case Instruction::Store:
+                {
+                    //printf("store %s %s, %s* %%%u, align %u\n", type_to_string(store.type), store.value_to_be_stored->to_string(), type_to_string(0), store.alloca_i.index, store.alignment);
+                } break;
+                case Instruction::Alloca:
+                {
+                    printf("%%%u = alloca %s, align %u\n", alloca_i.index, type_to_string(alloca_i.type), alloca_i.alignment);
+                } break;
+                case Instruction::Ret:
+                {
+                    printf("ret %s ", type_to_string(ret.type));
+                    switch (ret.value->id)
+                    {
+                        case ValueID::Instruction:
+                        {
+                            if (ret.value->instruction->id == Instruction::Alloca)
+                            {
+                                printf("%%%u\n", ret.value->instruction->alloca_i.index);
+                            }
+                            else
+                            {
+                                RNS_NOT_IMPLEMENTED;
+                            }
+                        } break;
+                        default:
+                            RNS_NOT_IMPLEMENTED;
+                            break;
+                    }
+                } break;
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+        }
+
+
+        const char* id_to_string()
+        {
+            switch (id)
+            {
+#define rns_instr_id_to_string(_instr_) case Instruction:: ## _instr_: return #_instr_
+                rns_instr_id_to_string(Ret);
+                rns_instr_id_to_string(Br);
+                rns_instr_id_to_string(Switch_);
+                rns_instr_id_to_string(Indirectbr);
+                rns_instr_id_to_string(Invoke);
+                rns_instr_id_to_string(Resume);
+                rns_instr_id_to_string(Unreachable);
+                rns_instr_id_to_string(Cleanup_ret);
+                rns_instr_id_to_string(Catch_ret);
+                rns_instr_id_to_string(Catch_switch);
+                rns_instr_id_to_string(Call_br);
+                rns_instr_id_to_string(Fneg);
+                rns_instr_id_to_string(Add);
+                rns_instr_id_to_string(Fadd);
+                rns_instr_id_to_string(Sub);
+                rns_instr_id_to_string(Fsub);
+                rns_instr_id_to_string(Mul);
+                rns_instr_id_to_string(Fmul);
+                rns_instr_id_to_string(Udiv);
+                rns_instr_id_to_string(Sdiv);
+                rns_instr_id_to_string(Fdiv);
+                rns_instr_id_to_string(Urem);
+                rns_instr_id_to_string(Srem);
+                rns_instr_id_to_string(Frem);
+                rns_instr_id_to_string(Shl);
+                rns_instr_id_to_string(Lshr);
+                rns_instr_id_to_string(Ashr);
+                rns_instr_id_to_string(And);
+                rns_instr_id_to_string(Or);
+                rns_instr_id_to_string(Xor);
+                rns_instr_id_to_string(Alloca);
+                rns_instr_id_to_string(Load);
+                rns_instr_id_to_string(Store);
+                rns_instr_id_to_string(GetElementPtr);
+                rns_instr_id_to_string(Fence);
+                rns_instr_id_to_string(AtomicCmpXchg);
+                rns_instr_id_to_string(AtomicRMW);
+                rns_instr_id_to_string(Trunc);
+                rns_instr_id_to_string(ZExt);
+                rns_instr_id_to_string(SExt);
+                rns_instr_id_to_string(FPToUI);
+                rns_instr_id_to_string(FPToSI);
+                rns_instr_id_to_string(UIToFP);
+                rns_instr_id_to_string(SIToFP);
+                rns_instr_id_to_string(FPTrunc);
+                rns_instr_id_to_string(FPExt);
+                rns_instr_id_to_string(PtrToInt);
+                rns_instr_id_to_string(IntToPtr);
+                rns_instr_id_to_string(BitCast);
+                rns_instr_id_to_string(AddrSpaceCast);
+                rns_instr_id_to_string(CleanupPad);
+                rns_instr_id_to_string(CatchPad);
+                rns_instr_id_to_string(ICmp);
+                rns_instr_id_to_string(FCmp);
+                rns_instr_id_to_string(Phi);
+                rns_instr_id_to_string(Call);
+                rns_instr_id_to_string(Select);
+                rns_instr_id_to_string(UserOp1);
+                rns_instr_id_to_string(UserOp2);
+                rns_instr_id_to_string(VAArg);
+                rns_instr_id_to_string(ExtractElement);
+                rns_instr_id_to_string(InsertElement);
+                rns_instr_id_to_string(ShuffleVector);
+                rns_instr_id_to_string(ExtractValue);
+                rns_instr_id_to_string(InsertValue);
+                rns_instr_id_to_string(LandingPad);
+                rns_instr_id_to_string(Freeze);
+#undef rns_instr_id_to_string
+            }
+
+            return nullptr;
+        }
+    };
+
+    const char* instruction_to_string_for_value(InstructionInfo* instruction)
+    {
+        if (instruction->id == Instruction::Alloca)
+        {
+            return "%alloca";
+        }
+        else
+        {
+            RNS_NOT_IMPLEMENTED;
+        }
+        return nullptr;
+    }
+
+
+    struct BasicBlock
+    {
+        Buffer<InstructionInfo> instructions;
+    };
+
+    struct Function
+    {
+        Buffer<BasicBlock> basic_blocks;
+        u32 alloca_count;
+        u32 next_alloca_index;
+        u32 next_non_alloca_index;
+    };
+
+    struct IRBuilder
+    {
+        BasicBlock* current;
+        Function* current_fn;
+        Buffer<InstructionInfo*>* current_alloca_buffer;
+        Buffer<InstructionInfo*>* current_instruction_ref;
+
+        InstructionInfo* append(InstructionInfo instruction)
+        {
+            auto* instr = current->instructions.append(instruction);
+            instr->print();
+            return instr;
+        }
+
+        void create_alloca(Node* node)
+        {
+            assert(node->type == NodeType::VarDecl);
+            assert(node->var_decl.type);
+            Alloca alloca_i = {
+                .type = node->var_decl.type,
+                .index = current_fn->next_alloca_index++,
+                .count = 1,
+                .alignment = 0xcc,
+            };
+            auto* alloca_i_ptr = append({
+                .id = Instruction::Alloca,
+                .alloca_i = alloca_i,
+                });
+            current_alloca_buffer->append(alloca_i_ptr);
+            current_fn->alloca_count++;
+        }
     };
 
     bool typecheck(Type* type, LLVM::Value* value)
@@ -206,7 +465,7 @@ namespace LLVM
     }
 
     using TypecheckingFunction = bool(Type*, LLVM::Value*);
-    Value* node_to_bytecode_value(Allocator* allocator, NodeBuffer& node_buffer, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node, TypecheckingFunction* typechecking_fn = nullptr, Type* type_to_typecheck = nullptr)
+    Value* node_to_bytecode_value(Allocator* allocator, IRBuilder& ir_builder, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node, TypecheckingFunction* typechecking_fn = nullptr, Type* type_to_typecheck = nullptr)
     {
         switch (node->type)
         {
@@ -228,6 +487,18 @@ namespace LLVM
                 }
                 return value;
             } break;
+            case NodeType::VarExpr:
+            {
+                auto* alloca_elem = (*ir_builder.current_alloca_buffer)[current_function.variables.get_id_if_ref_buffer(node->var_expr.mentioned)];
+                assert(alloca_elem);
+                Value* value = new(allocator) Value;
+                assert(value);
+                *value = {
+                    .id = ValueID::Instruction,
+                    .instruction = alloca_elem,
+                };
+                return value;
+            } break;
             default:
                 RNS_NOT_IMPLEMENTED;
                 break;
@@ -236,7 +507,7 @@ namespace LLVM
         return nullptr;
     }
 
-    void do_statement_node(Allocator* allocator, Buffer<InstructionInfo>& llvm_instructions, NodeBuffer& node_buffer, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node)
+    void do_statement_node(Allocator* allocator, IRBuilder& ir_builder, LLVM::Function& llvm_function, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node)
     {
         InstructionInfo instruction;
 
@@ -244,12 +515,22 @@ namespace LLVM
         {
             case NodeType::VarDecl:
             {
-                assert(!node->var_decl.is_fn_arg);
-                auto var_name = node->var_decl.name;
-                auto* var_type = node->var_decl.type;
-                auto* var_value_node = node->var_decl.value;
-                assert(var_type);
-                assert(var_value_node);
+                if (node->var_decl.value)
+                {
+                    auto* value = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, node->var_decl.value, typecheck, node->var_decl.type);
+                    assert(value);
+                    InstructionInfo instruction;
+                    instruction.id = Instruction::Store;
+                    instruction.store.type = node->var_decl.type;
+                    instruction.store.value_to_be_stored = value;
+                    instruction.store.alloca_i = (*ir_builder.current_alloca_buffer)[current_function.variables.get_id_if_ref_buffer(node)];
+                    assert(instruction.store.alloca_i);
+
+                    instruction.store.alignment = 0xcc;
+
+
+                    ir_builder.append(instruction);
+                }
             } break;
             case NodeType::Ret:
             {
@@ -261,12 +542,13 @@ namespace LLVM
                 instruction.id = Instruction::Ret;
                 if (ret_expr)
                 {
-                    auto* ret_value = node_to_bytecode_value(allocator, node_buffer, type_declarations, current_function, ret_expr, typecheck, current_function.type->ret_type);
+                    auto* ret_value = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, ret_expr, typecheck, current_function.type->ret_type);
+                    assert(ret_value);
                     instruction.ret = {
-                        .type = nullptr,
+                        .type = current_function.type->ret_type,
                         .value = ret_value,
                     };
-                    llvm_instructions.append(instruction);
+                    ir_builder.append(instruction);
                 }
                 else
                 {
@@ -279,17 +561,49 @@ namespace LLVM
         }
     }
 
-    void encode(Compiler& compiler, Allocator* allocator, NodeBuffer& node_buffer, FunctionTypeBuffer& function_type_declarations, TypeBuffer& type_declarations, FunctionDeclarationBuffer& function_declarations)
+    void encode(Compiler& compiler, NodeBuffer& node_buffer, FunctionTypeBuffer& function_type_declarations, TypeBuffer& type_declarations, FunctionDeclarationBuffer& function_declarations)
     {
         compiler.subsystem = Compiler::Subsystem::IR;
+        auto llvm_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(50));
         assert(function_declarations.len == 1);
+        IRBuilder ir_builder = {};
+
         for (auto& function : function_declarations)
         {
-            Buffer<InstructionInfo> ib = Buffer<InstructionInfo>::create(allocator, 1024);
+            Function llvm_function = {
+                .basic_blocks = Buffer<BasicBlock>::create(&llvm_allocator, 8),
+            };
+            Buffer<InstructionInfo*> alloca_buffer = Buffer<InstructionInfo*>::create(&llvm_allocator, function.variables.len);
 
-            for (auto* st_node : function.scope.statements)
+            auto arg_count = 0;
+            for (auto* var_node : function.variables)
             {
-                do_statement_node(allocator, ib, node_buffer, type_declarations, function, st_node);
+                if (var_node->var_decl.is_fn_arg)
+                {
+                    arg_count++;
+                    continue;
+                }
+                break;
+            }
+
+            llvm_function.alloca_count = arg_count;
+            llvm_function.next_alloca_index = arg_count + 1;
+
+            ir_builder.current = llvm_function.basic_blocks.allocate();
+            ir_builder.current->instructions = ir_builder.current->instructions.create(&llvm_allocator, 1024);
+            ir_builder.current_fn = &llvm_function;
+            ir_builder.current_alloca_buffer = &alloca_buffer;
+
+            for (auto* var_node : function.variables)
+            {
+                assert(var_node->type == NodeType::VarDecl);
+
+                ir_builder.create_alloca(var_node);
+            }
+
+            for (auto* st_node : function.scope_blocks[0].statements)
+            {
+                do_statement_node(&llvm_allocator, ir_builder, llvm_function, type_declarations, function, st_node);
             }
         }
     }

@@ -143,7 +143,7 @@ struct TokenBuffer
         token->start = start;
         token->offset = static_cast<u16>(end - start);
         token->line = line;
-        token->print_token_id();
+        //token->print_token_id();
         return token;
     }
 };

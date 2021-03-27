@@ -25,6 +25,7 @@ namespace AST
         FunctionTypeBuffer function_type_declarations;
 
         ScopeBlock* current_scope;
+        FunctionDeclaration* current_function;
 
         inline Token* get_next_token(s64 i)
         {
@@ -190,7 +191,7 @@ namespace AST
         Node* find_existing_variable(Token* token)
         {
             RNS::String name = { token->symbol, token->offset };
-            for (auto var : current_scope->variables)
+            for (auto var : current_function->variables)
             {
                 assert(var->type == NodeType::VarDecl);
                 if (var->var_decl.name.equal(&name))
@@ -268,56 +269,56 @@ namespace AST
 
             bool braces = expect_and_consume('{');
 
-            node->conditional.if_block = nb.append(NodeType::ScopeBlock);
-            auto* if_node = node->conditional.if_block;
-            if_node->scope.parent = current_scope;
-            if_node->scope.type = ScopeType::ConditionalBlock;
-            current_scope = &if_node->scope;
+            node->conditional.if_block = current_function->scope_blocks.allocate();
+            auto* if_block = node->conditional.if_block;
+            if_block->parent = current_scope;
+            if_block->type = ScopeType::ConditionalBlock;
+            current_scope = if_block;
 
             if (braces)
             {
-                if_node->scope.statements = if_node->scope.statements.create(&allocator, 128);
+                if_block->statements = if_block->statements.create(&allocator, 128);
                 while (!expect_and_consume('}'))
                 {
                     auto* st_node = parse_statement();
                     assert(st_node);
-                    if_node->scope.statements.append(st_node);
+                    if_block->statements.append(st_node);
                 }
             }
             else
             {
-                if_node->scope.statements = if_node->scope.statements.create(&allocator, 1);
+                if_block->statements = if_block->statements.create(&allocator, 1);
                 auto* st_node = parse_statement();
-                if_node->scope.statements.append(st_node);
+                if_block->statements.append(st_node);
             }
 
             current_scope = static_cast<ScopeBlock*>(current_scope->parent);
 
             if (expect_and_consume_if_keyword(KeywordID::Else))
             {
-                node->conditional.else_block = nb.append(NodeType::ScopeBlock);
-                auto* else_node = node->conditional.else_block;
-                else_node->scope.parent = current_scope;
-                else_node->scope.type = ScopeType::ConditionalBlock;
-                current_scope = &else_node->scope;
+                node->conditional.else_block = current_function->scope_blocks.allocate();
+                auto* else_block = node->conditional.else_block;
+                else_block->parent = current_scope;
+                else_block->type = ScopeType::ConditionalBlock;
+                current_scope = else_block;
 
                 braces = expect_and_consume('{');
                 if (braces)
                 {
-                    else_node->scope.statements = else_node->scope.statements.create(&allocator, 128);
+                    else_block->statements = else_block->statements.create(&allocator, 128);
                     while (!expect_and_consume('}'))
                     {
                         auto* st_node = parse_statement();
                         assert(st_node);
-                        else_node->scope.statements.append(st_node);
+                        else_block->statements.append(st_node);
                     }
                 }
                 else
                 {
-                    else_node->scope.statements = else_node->scope.statements.create(&allocator, 1);
+                    else_block->statements = else_block->statements.create(&allocator, 1);
                     auto* st_node = parse_statement();
                     assert(st_node);
-                    else_node->scope.statements.append(st_node);
+                    else_block->statements.append(st_node);
                 }
                 current_scope = static_cast<ScopeBlock*>(current_scope->parent);
             }
@@ -479,11 +480,11 @@ namespace AST
                 }
 
                 // @TODO: should append to the current scope
-                if (current_scope->variables.cap == 0)
+                if (current_function->variables.cap == 0)
                 {
-                    current_scope->variables = current_scope->variables.create(&allocator, 16);
+                    current_function->variables = current_function->variables.create(&allocator, 16);
                 }
-                current_scope->variables.append(var_decl_node);
+                current_function->variables.append(var_decl_node);
 
                 return var_decl_node;
             }
@@ -502,10 +503,11 @@ namespace AST
 
             Token* next_token;
             bool arg_left_to_parse = (next_token = get_next_token())->id != ')';
+
             if (arg_left_to_parse)
             {
                 s64 allocated_arg_count = 32;
-                fn->scope.variables = fn->scope.variables.create(&allocator, allocated_arg_count);
+                fn->variables = fn->variables.create(&allocator, allocated_arg_count);
                 fn_type.arg_types = fn_type.arg_types.create(&allocator, allocated_arg_count);
             }
 
@@ -514,18 +516,18 @@ namespace AST
                 auto* node = parse_expression();
                 if (!node)
                 {
-                    compiler.print_error({}, "error parsing argument %lld", fn->scope.variables.len + 1);
+                    compiler.print_error({}, "error parsing argument %lld", current_function->variables.len + 1);
                     return;
                 }
                 if (node->type != NodeType::VarDecl)
                 {
-                    compiler.print_error({}, "expected argument", fn->scope.variables.len + 1);
+                    compiler.print_error({}, "expected argument", current_function->variables.len + 1);
                     return;
                 }
                 node->var_decl.is_fn_arg = true;
                 fn_type.arg_types.append(node->var_decl.type);
+                fn->variables.append(node);
                 arg_left_to_parse = (next_token = get_next_token())->id != ')';
-                fn->arg_count++;
             }
 
             if (!expect_and_consume(')'))
@@ -615,26 +617,31 @@ namespace AST
 
         void parse_body(FunctionDeclaration* fn)
         {
-            parse_block(&fn->scope, false);
+            current_scope = fn->scope_blocks.allocate();
+            current_scope->type = ScopeType::Function;
+            current_scope->parent = nullptr;
+
+            parse_block(current_scope, false);
         }
 
         FunctionDeclaration parse_function(bool* parsed_ok)
         {
-            FunctionDeclaration fn = {};
-            fn.scope.type = ScopeType::Function;
-
             Token* t = expect_and_consume(TokenID::Symbol);
             if (!t)
             {
                 compiler.print_error({}, "Expected symbol at the beginning of a declaration");
-                return fn;
+                return {};
             }
 
             if (!expect_and_consume_twice(':', ':'))
             {
-                return fn;
+                return {};
             }
 
+            FunctionDeclaration fn = {
+                .scope_blocks = Buffer<ScopeBlock>::create(&allocator, 16),
+            };
+            current_function = &fn;
 
             // @TODO: change this to be properly handled by the function parser
             parse_prototype(&fn);

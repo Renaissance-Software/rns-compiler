@@ -363,7 +363,6 @@ namespace AST
         Ret,
         VarDecl,
         VarExpr,
-        ScopeBlock,
         Conditional,
     };
 
@@ -380,20 +379,11 @@ namespace AST
         Node* expr;
     };
 
-    struct VarDecl
-    {
-        RNS::String name;
-        // @TODO: should consider fully integrating the type in here
-        Type* type;
-        Node* value;
-        bool is_fn_arg;
-    };
 
     struct VarExpr
     {
         Node* mentioned;
     };
-
 
     enum class ScopeType
     {
@@ -410,23 +400,32 @@ namespace AST
     using NodeRefBuffer = RNS::Buffer<Node*>;
     struct ScopeBlock : public Scope
     {
-        NodeRefBuffer variables;
         NodeRefBuffer statements;
+    };
+
+    struct VarDecl
+    {
+        RNS::String name;
+        // @TODO: should consider fully integrating the type in here
+        Type* type;
+        Node* value;
+        ScopeBlock* scope;
+        bool is_fn_arg;
     };
 
     struct Conditional
     {
         Node* condition;
-        Node* if_block;
-        Node* else_block;
+        ScopeBlock* if_block;
+        ScopeBlock* else_block;
     };
 
     struct FunctionDeclaration
     {
         // @TODO: consider: right now normal functions use anonymous function types
+        RNS::Buffer<ScopeBlock> scope_blocks;
+        NodeRefBuffer variables;
         FunctionType* type;
-        ScopeBlock scope; // First scope variables are variable arguments
-        s64 arg_count;
     };
 
     struct Node
