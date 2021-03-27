@@ -708,13 +708,15 @@ const char* node_type_to_string(NodeType type)
 //}
 
 // @TODO: reconsider what type is to be returned from top level declarations
-AST::Result parse(Compiler& compiler, TokenBuffer& tb)
+AST::Result parse(Compiler& compiler, LexerResult& lexer_result)
 {
     RNS_PROFILE_FUNCTION();
+    compiler.subsystem = Compiler::Subsystem::Parser;
+
     Parser parser = {
-        .ptr = tb.ptr,
+        .ptr = lexer_result.ptr,
         .parser_it = 0,
-        .len = tb.len,
+        .len = lexer_result.len,
         .allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(300)),
         .nb = NodeBuffer::create(&parser.allocator, 1024),
         .compiler = compiler,

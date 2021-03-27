@@ -93,7 +93,6 @@ namespace LLVM
         Freeze = 67,
     };
 
-
     enum class ValueID : u8
     {
         Memory,
@@ -280,8 +279,9 @@ namespace LLVM
         }
     }
 
-    void encode(Allocator* allocator, NodeBuffer& node_buffer, FunctionTypeBuffer& function_type_declarations, TypeBuffer& type_declarations, FunctionDeclarationBuffer& function_declarations)
+    void encode(Compiler& compiler, Allocator* allocator, NodeBuffer& node_buffer, FunctionTypeBuffer& function_type_declarations, TypeBuffer& type_declarations, FunctionDeclarationBuffer& function_declarations)
     {
+        compiler.subsystem = Compiler::Subsystem::IR;
         assert(function_declarations.len == 1);
         for (auto& function : function_declarations)
         {

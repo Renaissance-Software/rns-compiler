@@ -2,4 +2,4 @@
 #include <RNS/types.h>
 #include "compiler_types.h"
 
-AST::Result parse(Compiler& compiler, TokenBuffer& tb);
+AST::Result parse(Compiler& compiler, LexerResult& lexer_result);

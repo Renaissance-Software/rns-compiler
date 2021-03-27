@@ -338,34 +338,14 @@ namespace Lexer
         }
     };
 
-    struct TokenBuffer
+    struct LexerResult
     {
         Token* ptr;
         s64 len;
-        s64 cap;
-        s64 line_count;
-        s64 file_size;
-        const char* file;
-        RNS::StringBuffer sb;
-        s64 consume_count;
-
-        inline Token* new_token(TokenID type, u32 start, u32 end, u16 line)
-        {
-            assert(len + 1 < cap);
-            Token* token = &ptr[len++];
-            token->id = static_cast<u8>(type);
-            token->start = start;
-            token->offset = static_cast<u16>(end - start);
-            token->line = line;
-            return token;
-        }
-
     };
 
 }
-
 using namespace Lexer;
-
 
 namespace AST
 {

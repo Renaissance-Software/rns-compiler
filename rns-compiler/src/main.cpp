@@ -68,13 +68,12 @@ s32 rns_main(s32 argc, char* argv[])
     const char file_content[] = "main :: () -> s32 { return 0; }";
 
     file.ptr = (char*)file_content;
-    file.len = rns_array_length(file);
+    file.len = rns_array_length(file_content);
 #endif
 
     Compiler compiler = {
         .page_allocator = default_create_allocator(RNS_GIGABYTE(1)),
         .common_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(100)),
-        .subsystem = Compiler::Subsystem::Lexer,
         .errors_reported = false,
     };
 
@@ -82,9 +81,14 @@ s32 rns_main(s32 argc, char* argv[])
     TypeBuffer type_declarations = TypeBuffer::create(&type_allocator, 1024);
     register_native_types(type_declarations);
 
-    TokenBuffer tb = lex(compiler, type_declarations, file);
+    LexerResult lexer_result = lex(compiler, type_declarations, file);
+    if (compiler.errors_reported)
+    {
+        printf("Lexer failed!\n");
+        return -1;
+    }
 
-    auto parser_result = parse(compiler, tb);
+    auto parser_result = parse(compiler, lexer_result);
     if (compiler.errors_reported)
     {
         printf("Parsing failed.\n");
@@ -108,7 +112,7 @@ s32 rns_main(s32 argc, char* argv[])
         } break;
         case CompilerIR::LLVM_CUSTOM:
         {
-            LLVM::encode(&bc_allocator, parser_result.node_buffer, parser_result.function_type_declarations, parser_result.type_declarations, parser_result.function_declarations);
+            LLVM::encode(compiler, &bc_allocator, parser_result.node_buffer, parser_result.function_type_declarations, parser_result.type_declarations, parser_result.function_declarations);
         } break;
         default:
             RNS_UNREACHABLE;

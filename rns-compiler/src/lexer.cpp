@@ -124,6 +124,30 @@ constexpr bool check()
 }
 static_assert(check());
 
+struct TokenBuffer
+{
+    Token* ptr;
+    s64 len;
+    s64 cap;
+    s64 line_count;
+    s64 file_size;
+    const char* file;
+    RNS::StringBuffer sb;
+    s64 consume_count;
+
+    Token* new_token(TokenID type, u32 start, u32 end, u16 line)
+    {
+        assert(len + 1 < cap);
+        Token* token = &ptr[len++];
+        token->id = static_cast<u8>(type);
+        token->start = start;
+        token->offset = static_cast<u16>(end - start);
+        token->line = line;
+        token->print_token_id();
+        return token;
+    }
+};
+
 struct NameMatch
 {
     TokenID token_id;
@@ -156,9 +180,10 @@ static inline NameMatch match_name(const char* name, u32 len, TypeBuffer& type_d
     return { .token_id = TokenID::Symbol };
 }
 
-TokenBuffer lex(Compiler& compiler, TypeBuffer& type_declarations, RNS::String file_content)
+LexerResult lex(Compiler& compiler, TypeBuffer& type_declarations, RNS::String file_content)
 {
     RNS_PROFILE_FUNCTION();
+    compiler.subsystem = Compiler::Subsystem::Lexer;
 
     Allocator token_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(100));
     Allocator name_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(100));
@@ -307,5 +332,5 @@ TokenBuffer lex(Compiler& compiler, TypeBuffer& type_declarations, RNS::String f
     }
     token_buffer.line_count++;
 
-    return token_buffer;
+    return { token_buffer.ptr, token_buffer.len };
 }
