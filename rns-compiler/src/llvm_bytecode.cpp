@@ -137,11 +137,47 @@ namespace LLVM
     };
 
     struct Value;
+    struct Symbol
+    {
+        enum class Type
+        {
+            Constant,
+            Index,
+        };
+        Type type;
+        union
+        {
+            Constant constant;
+            LLVMID index;
+        } result;
+
+        void to_string(char* buffer)
+        {
+            switch (type)
+            {
+                case Symbol::Type::Constant:
+                {
+                    if (result.constant.integer.is_signed)
+                    {
+                        sprintf(buffer, "-%llu", result.constant.integer.lit);
+                    }
+                    else
+                    {
+                        sprintf(buffer, "%llu", result.constant.integer.lit);
+                    }
+                } break;
+                case Symbol::Type::Index:
+                {
+                    sprintf(buffer, "%%%u", result.index);
+                } break;
+            }
+        }
+    };
 
     struct Ret
     {
         Type* type;
-        Value* value;
+        Symbol symbol;
     };
 
     // @Info: these do not form part of the instruction buffer since they need to be allocated at the top of the function
@@ -153,12 +189,22 @@ namespace LLVM
         u32 alignment;
     };
 
+
     struct InstructionInfo;
+
     struct Store
     {
         Type* type;
-        Value* value_to_be_stored;
+        Symbol symbol;
         InstructionInfo* alloca_i;
+        u32 alignment;
+    };
+
+    struct Load
+    {
+        Type* type;
+        InstructionInfo* alloca_i;
+        LLVMID index;
         u32 alignment;
     };
 
@@ -175,7 +221,7 @@ namespace LLVM
     };
 
     struct InstructionInfo;
-    const char* instruction_to_string_for_value(InstructionInfo* instruction);
+    void instruction_to_string_for_value(InstructionInfo* instruction, char* buffer);
 
     struct Value
     {
@@ -186,7 +232,7 @@ namespace LLVM
             Constant constant;
         };
 
-        const char* to_string()
+        void to_string(char* buffer)
         {
             switch (id)
             {
@@ -196,7 +242,14 @@ namespace LLVM
                     {
                         case ConstantID::Int:
                         {
-                            return "int_lit";
+                            if (constant.integer.is_signed)
+                            {
+                                sprintf(buffer, "-%llu", constant.integer.lit);
+                            }
+                            else
+                            {
+                                sprintf(buffer, "%llu", constant.integer.lit);
+                            }
                         } break;
                         default:
                         {
@@ -206,14 +259,12 @@ namespace LLVM
                 } break;
                 case ValueID::Instruction:
                 {
-                    return instruction_to_string_for_value(instruction);
-                }
+                    instruction_to_string_for_value(instruction, buffer);
+                } break;
                 default:
                     RNS_NOT_IMPLEMENTED;
                     break;
             }
-
-            return nullptr;
         }
     };
 
@@ -250,6 +301,7 @@ namespace LLVM
             Ret ret;
             Alloca alloca_i;
             Store store;
+            Load load;
         };
 
         void print()
@@ -258,7 +310,20 @@ namespace LLVM
             {
                 case Instruction::Store:
                 {
-                    //printf("store %s %s, %s* %%%u, align %u\n", type_to_string(store.type), store.value_to_be_stored->to_string(), type_to_string(0), store.alloca_i.index, store.alignment);
+                    char value_buffer[64];
+                    store.symbol.to_string(value_buffer);
+                    assert(value_buffer && *value_buffer);
+
+                    printf("store %s %s, %s* %%%u, align %u\n", type_to_string(store.type), value_buffer, type_to_string(store.alloca_i->alloca_i.type), store.alloca_i->alloca_i.index, store.alignment);
+                } break;
+                case Instruction::Load:
+                {
+                    char value_buffer[64];
+                    store.symbol.to_string(value_buffer);
+                    assert(value_buffer && *value_buffer);
+
+                    printf("%%%u = load %s, %s* %%%u, align %u\n", load.index, type_to_string(load.type), type_to_string(load.alloca_i->alloca_i.type), load.alloca_i->alloca_i.index, load.alignment);
+
                 } break;
                 case Instruction::Alloca:
                 {
@@ -266,24 +331,9 @@ namespace LLVM
                 } break;
                 case Instruction::Ret:
                 {
-                    printf("ret %s ", type_to_string(ret.type));
-                    switch (ret.value->id)
-                    {
-                        case ValueID::Instruction:
-                        {
-                            if (ret.value->instruction->id == Instruction::Alloca)
-                            {
-                                printf("%%%u\n", ret.value->instruction->alloca_i.index);
-                            }
-                            else
-                            {
-                                RNS_NOT_IMPLEMENTED;
-                            }
-                        } break;
-                        default:
-                            RNS_NOT_IMPLEMENTED;
-                            break;
-                    }
+                    char value_buffer[64];
+                    ret.symbol.to_string(value_buffer);
+                    printf("ret %s %s\n", type_to_string(ret.type), value_buffer);
                 } break;
                 default:
                     RNS_NOT_IMPLEMENTED;
@@ -371,19 +421,19 @@ namespace LLVM
         }
     };
 
-    const char* instruction_to_string_for_value(InstructionInfo* instruction)
+    void instruction_to_string_for_value(InstructionInfo* instruction, char* buffer)
     {
-        if (instruction->id == Instruction::Alloca)
+        switch (instruction->id)
         {
-            return "%alloca";
+            case Instruction::Alloca:
+            {
+                sprintf(buffer, "%%%u", instruction->alloca_i.index);
+            } break;
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
         }
-        else
-        {
-            RNS_NOT_IMPLEMENTED;
-        }
-        return nullptr;
     }
-
 
     struct BasicBlock
     {
@@ -394,8 +444,7 @@ namespace LLVM
     {
         Buffer<BasicBlock> basic_blocks;
         u32 alloca_count;
-        u32 next_alloca_index;
-        u32 next_non_alloca_index;
+        LLVMID next_index;
     };
 
     struct IRBuilder
@@ -418,9 +467,9 @@ namespace LLVM
             assert(node->var_decl.type);
             Alloca alloca_i = {
                 .type = node->var_decl.type,
-                .index = current_fn->next_alloca_index++,
+                .index = current_fn->next_index++,
                 .count = 1,
-                .alignment = 0xcc,
+                .alignment = 4,
             };
             auto* alloca_i_ptr = append({
                 .id = Instruction::Alloca,
@@ -465,46 +514,61 @@ namespace LLVM
     }
 
     using TypecheckingFunction = bool(Type*, LLVM::Value*);
-    Value* node_to_bytecode_value(Allocator* allocator, IRBuilder& ir_builder, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node, TypecheckingFunction* typechecking_fn = nullptr, Type* type_to_typecheck = nullptr)
+
+
+    Symbol node_to_bytecode_value(Allocator* allocator, IRBuilder& ir_builder, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node, TypecheckingFunction* typechecking_fn = nullptr, Type* type_to_typecheck = nullptr)
     {
         switch (node->type)
         {
             case NodeType::IntLit:
             {
-                Value* value = new(allocator) Value;
-                assert(value);
-                *value = {
-                    .id = ValueID::Constant,
-                    .constant = {
-                        .id = ConstantID::Int,
-                        .integer = node->int_lit,
+                Symbol result = {
+                    .type = Symbol::Type::Constant,
+                    .result = {
+                        .constant = {
+                            .id = ConstantID::Int,
+                            .integer = node->int_lit,
+                        }
                     }
                 };
-                if (typechecking_fn)
-                { 
-                    assert(type_to_typecheck);
-                    assert(typechecking_fn(type_to_typecheck, value));
-                }
-                return value;
+
+                // @TODO: see if we can typecheck in another way
+                // 
+                //if (typechecking_fn)
+                //{ 
+                //    assert(type_to_typecheck);
+                //    assert(typechecking_fn(type_to_typecheck, value));
+                //}
+                return result;
             } break;
+            // @TODO: this should generate a load
             case NodeType::VarExpr:
             {
                 auto* alloca_elem = (*ir_builder.current_alloca_buffer)[current_function.variables.get_id_if_ref_buffer(node->var_expr.mentioned)];
                 assert(alloca_elem);
-                Value* value = new(allocator) Value;
-                assert(value);
-                *value = {
-                    .id = ValueID::Instruction,
-                    .instruction = alloca_elem,
+
+                InstructionInfo load_instruction = {
+                    .id = Instruction::Load,
+                    .load = {
+                        .type = alloca_elem->alloca_i.type,
+                        .alloca_i = alloca_elem,
+                        .index = ir_builder.current_fn->next_index++,
+                        .alignment = 4,
+                    }
                 };
-                return value;
+                ir_builder.append(load_instruction);
+
+                Symbol symbol = {
+                    .type = Symbol::Type::Index,
+                    .result = { .index = load_instruction.load.index},
+                };
+                return symbol;
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
                 break;
         }
-
-        return nullptr;
+        return {};
     }
 
     void do_statement_node(Allocator* allocator, IRBuilder& ir_builder, LLVM::Function& llvm_function, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node)
@@ -517,16 +581,15 @@ namespace LLVM
             {
                 if (node->var_decl.value)
                 {
-                    auto* value = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, node->var_decl.value, typecheck, node->var_decl.type);
-                    assert(value);
+                    auto symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, node->var_decl.value, typecheck, node->var_decl.type);
                     InstructionInfo instruction;
                     instruction.id = Instruction::Store;
                     instruction.store.type = node->var_decl.type;
-                    instruction.store.value_to_be_stored = value;
+                    instruction.store.symbol = symbol;
                     instruction.store.alloca_i = (*ir_builder.current_alloca_buffer)[current_function.variables.get_id_if_ref_buffer(node)];
                     assert(instruction.store.alloca_i);
 
-                    instruction.store.alignment = 0xcc;
+                    instruction.store.alignment = 4;
 
 
                     ir_builder.append(instruction);
@@ -542,11 +605,10 @@ namespace LLVM
                 instruction.id = Instruction::Ret;
                 if (ret_expr)
                 {
-                    auto* ret_value = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, ret_expr, typecheck, current_function.type->ret_type);
-                    assert(ret_value);
+                    auto symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, ret_expr, typecheck, current_function.type->ret_type);
                     instruction.ret = {
                         .type = current_function.type->ret_type,
-                        .value = ret_value,
+                        .symbol = symbol,
                     };
                     ir_builder.append(instruction);
                 }
@@ -587,7 +649,7 @@ namespace LLVM
             }
 
             llvm_function.alloca_count = arg_count;
-            llvm_function.next_alloca_index = arg_count + 1;
+            llvm_function.next_index = arg_count + 1;
 
             ir_builder.current = llvm_function.basic_blocks.allocate();
             ir_builder.current->instructions = ir_builder.current->instructions.create(&llvm_allocator, 1024);
