@@ -393,40 +393,6 @@ namespace AST
                 }
 
                 Node* node = nb.append(NodeType::BinOp);
-                bool left_node_zero = (*left_expr)->type == NodeType::IntLit && (*left_expr)->int_lit.lit == 0;
-                bool right_node_zero = right_expression->type == NodeType::IntLit && right_expression->int_lit.lit == 0;
-                bool cmp_zero = is_cmp_binop(bin_op) && (left_node_zero || right_node_zero);
-
-                if (cmp_zero)
-                {
-                    if (right_node_zero)
-                    {
-                        switch (bin_op)
-                        {
-                            case BinOp::Cmp_Equal:
-                            {
-                                bin_op = BinOp::Cmp_EqualZero;
-                            } break;
-                            default:
-                                RNS_NOT_IMPLEMENTED;
-                                break;
-                        }
-                    }
-                    else if (left_node_zero)
-                    {
-                        switch (bin_op)
-                        {
-                            default:
-                                RNS_NOT_IMPLEMENTED;
-                                break;
-                        }
-                    }
-                    else
-                    {
-                        RNS_UNREACHABLE;
-                    }
-                }
-
                 node->bin_op.op = bin_op;
                 node->bin_op.left = *left_expr;
                 node->bin_op.right = right_expression;

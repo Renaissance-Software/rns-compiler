@@ -119,8 +119,6 @@ namespace Lexer
         Assign,
         Cmp_Equal,
         Cmp_NotEqual,
-        Cmp_EqualZero,
-        Cmp_EqualNotZero,
         Cmp_LessThan,
         Cmp_GreaterThan,
         Cmp_LessThanOrEqual,

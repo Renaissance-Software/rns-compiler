@@ -483,8 +483,8 @@ namespace LLVM
                 auto* left_node = node->bin_op.left;
                 auto* right_node = node->bin_op.right;
 
-                auto left_symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, left_node);
-                auto right_symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, right_node);
+                auto left_symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, left_node, expected_type);
+                auto right_symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, right_node, expected_type);
 
                 switch (node->bin_op.op)
                 {
