@@ -8,6 +8,8 @@ bool Typing::typecheck(Type* type1, Type* type2)
 #define type_append(_id_)
 
 const char* native_type_names[] = {
+    "none",
+    "u1",
     "u8", 
     "u16",
     "u32",
@@ -22,6 +24,15 @@ const u32 native_type_count = rns_array_length(native_type_names);
 void Typing::register_native_types(TypeBuffer& type_buffer)
 {
     u16 integer_bits[] = { 8, 16, 32, 64 };
+
+    type_buffer.append({ .id = TypeID::VoidType });
+    type_buffer.append({
+        .id = TypeID::IntegerType,
+        .integer_t = {
+            .bits = 1,
+            .is_signed = false,
+        },
+        });
 
     for (auto bit_count : integer_bits)
     {

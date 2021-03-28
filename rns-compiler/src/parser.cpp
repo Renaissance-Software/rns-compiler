@@ -707,7 +707,7 @@ AST::Result parse(Compiler& compiler, LexerResult& lexer_result)
         auto fn_decl = parser.parse_function(&parsed_ok);
         if (compiler.errors_reported)
         {
-            return { .node_buffer = parser.nb, .function_type_declarations = parser.function_type_declarations, .type_declarations = parser.type_declarations, .function_declarations = parser.function_declarations };
+            return { .node_buffer = parser.nb, .function_type_declarations = parser.function_type_declarations, .function_declarations = parser.function_declarations };
         }
         else if (parsed_ok)
         {
@@ -716,8 +716,8 @@ AST::Result parse(Compiler& compiler, LexerResult& lexer_result)
         }
 
         compiler.print_error({}, "Unknown top level declaration");
-        return { .node_buffer = parser.nb, .function_type_declarations = parser.function_type_declarations, .type_declarations = parser.type_declarations, .function_declarations = parser.function_declarations };
+        return { .node_buffer = parser.nb, .function_type_declarations = parser.function_type_declarations, .function_declarations = parser.function_declarations };
     }
 
-    return { .node_buffer = parser.nb, .function_type_declarations = parser.function_type_declarations, .type_declarations = parser.type_declarations, .function_declarations = parser.function_declarations }; // Omit error message as it's only filled when there's an actual error message
+    return { .node_buffer = parser.nb, .function_type_declarations = parser.function_type_declarations, .function_declarations = parser.function_declarations }; // Omit error message as it's only filled when there's an actual error message
 }

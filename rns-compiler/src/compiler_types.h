@@ -43,14 +43,17 @@ namespace Typing
     {
 
     };
+
     struct DoubleType
     {
     };
+
     struct IntegerType
     {
         u16 bits;
         bool is_signed;
     };
+
     struct DataStructureType
     {
         s64 arg_count;
@@ -129,6 +132,7 @@ namespace Lexer
     enum class NativeTypeID : u8
     {
         None,
+        U1,
         U8,
         U16,
         U32,
@@ -463,8 +467,6 @@ namespace AST
     {
         NodeBuffer node_buffer;
         FunctionTypeBuffer function_type_declarations;
-        // @Info: this includes native types
-        TypeBuffer type_declarations;
         FunctionDeclarationBuffer function_declarations;
     };
 }
