@@ -117,12 +117,7 @@ KW_DEF(continue),
 };
 
 const auto keyword_count = rns_array_length(keywords);
-constexpr bool check()
-{
-    constexpr bool keyword_count_check = static_cast<u8>(KeywordID::Count) == keyword_count;
-    return keyword_count_check;
-}
-static_assert(check());
+static_assert(static_cast<u8>(KeywordID::Count) == keyword_count);
 
 struct TokenBuffer
 {

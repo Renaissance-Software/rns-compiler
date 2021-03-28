@@ -326,6 +326,97 @@ namespace AST
             return node;
         }
 
+        Node* parse_for()
+        {
+            auto* for_t = expect_and_consume_if_keyword(KeywordID::For);
+            Node* for_loop = nb.append(NodeType::Loop);
+            auto* parent_scope = current_scope;
+            for_loop->loop.prefix = this->current_function->scope_blocks.allocate();
+            for_loop->loop.prefix->type = ScopeType::LoopPrefix;
+            for_loop->loop.prefix->parent = parent_scope;
+            for_loop->loop.body = this->current_function->scope_blocks.allocate();
+            for_loop->loop.body->type = ScopeType::LoopBody;
+            for_loop->loop.body->parent = parent_scope;
+            for_loop->loop.postfix = this->current_function->scope_blocks.allocate();
+            for_loop->loop.postfix->type = ScopeType::LoopPostfix;
+            for_loop->loop.postfix->parent = parent_scope;
+            assert(for_t);
+
+            auto* it_symbol = expect_and_consume(TokenID::Symbol);
+            Node* it_decl = nb.append(NodeType::VarDecl);
+            it_decl->var_decl.is_fn_arg = false;
+            it_decl->var_decl.name = RNS::String{ it_symbol->symbol, it_symbol->offset };
+            it_decl->var_decl.scope = current_scope;
+            it_decl->var_decl.type = &type_declarations[(u32)NativeTypeID::S32];
+            // @TODO: we should match it to the right operand
+            it_decl->var_decl.value = nb.append(NodeType::IntLit);
+            it_decl->var_decl.value->int_lit.bit_count = 32;
+            it_decl->var_decl.value->int_lit.is_signed = true;
+            it_decl->var_decl.value->int_lit.lit = 0;
+            this->current_function->variables.append(it_decl);
+
+            {
+                current_scope = for_loop->loop.prefix;
+                auto* colon = expect_and_consume(':');
+                assert(colon);
+                auto* t = consume();
+                auto token_id = t->get_id();
+                Node* right_node = nullptr;
+                switch (token_id)
+                {
+                    case TokenID::IntegerLit:
+                    {
+                        right_node = nb.append(NodeType::IntLit);
+                        auto literal = t->int_lit;
+                        assert(literal >= 0 && literal <= UINT32_MAX);
+                        right_node->int_lit.bit_count = 32;
+                        right_node->int_lit.is_signed = false;
+                        right_node->int_lit.lit = literal;
+                    } break;
+                    default:
+                        RNS_NOT_IMPLEMENTED;
+                        break;
+                }
+
+                assert(right_node);
+                Node* it_expr = nb.append(NodeType::VarExpr);
+                it_expr->var_expr.mentioned = it_decl;
+                Node* cmp_op = nb.append(NodeType::BinOp);
+                cmp_op->bin_op.op = BinOp::Cmp_LessThan;
+                cmp_op->bin_op.left = it_expr;
+                cmp_op->bin_op.right = right_node;
+                Node* prefix_statements[] = { cmp_op };
+                for_loop->loop.prefix->statements = for_loop->loop.prefix->statements.create(&allocator, rns_array_length(prefix_statements));
+                for (auto* prefix_st : prefix_statements)
+                {
+                    for_loop->loop.prefix->statements.append(prefix_st);
+                }
+            }
+
+            {
+                current_scope = for_loop->loop.body;
+                parse_block(current_scope, true);
+            }
+
+            {
+                current_scope = for_loop->loop.postfix;
+                current_scope->statements = current_scope->statements.create(&allocator, 1);
+                Node* var_expr = nb.append(NodeType::VarExpr);
+                var_expr->var_expr.mentioned = it_decl;
+                Node* one_lit = nb.append(NodeType::IntLit);
+                one_lit->int_lit.bit_count = 32;
+                one_lit->int_lit.is_signed = false;
+                one_lit->int_lit.lit = 1;
+                Node* postfix_increment = nb.append(NodeType::BinOp);
+                postfix_increment->bin_op.left = var_expr;
+                postfix_increment->bin_op.op = BinOp::Plus;
+                postfix_increment->bin_op.right = one_lit;
+                current_scope->statements.append(postfix_increment);
+            }
+            current_scope = parent_scope;
+            return for_loop;
+        }
+
         Node* parse_statement()
         {
             auto* t = get_next_token();
@@ -346,6 +437,10 @@ namespace AST
                         case KeywordID::If:
                         {
                             statement = parse_conditional();
+                        } break;
+                        case KeywordID::For:
+                        {
+                            statement = parse_for();
                         } break;
                         default:
                             RNS_NOT_IMPLEMENTED;

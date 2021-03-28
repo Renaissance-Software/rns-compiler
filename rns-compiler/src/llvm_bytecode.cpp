@@ -571,6 +571,7 @@ namespace LLVM
 
         void print_block(BasicBlock* basic_block)
         {
+#if 1
             if (basic_block == &this->current_fn->entry_block)
             {
                 printf("fn_entry:\n");
@@ -585,6 +586,7 @@ namespace LLVM
             {
                 instr.print();
             }
+#endif
         }
     };
 

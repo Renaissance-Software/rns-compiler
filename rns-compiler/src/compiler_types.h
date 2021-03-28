@@ -366,6 +366,7 @@ namespace AST
         VarDecl,
         VarExpr,
         Conditional,
+        Loop,
     };
 
 
@@ -389,6 +390,10 @@ namespace AST
 
     enum class ScopeType
     {
+        None,
+        LoopPrefix,
+        LoopBody,
+        LoopPostfix,
         ConditionalBlock,
         Function,
     };
@@ -422,6 +427,13 @@ namespace AST
         ScopeBlock* else_block;
     };
 
+    struct Loop
+    {
+        ScopeBlock* prefix;
+        ScopeBlock* body;
+        ScopeBlock* postfix;
+    };
+
     struct FunctionDeclaration
     {
         // @TODO: consider: right now normal functions use anonymous function types
@@ -442,6 +454,7 @@ namespace AST
             VarExpr var_expr;
             ScopeBlock scope;
             Conditional conditional;
+            Loop loop;
         };
     };
 
