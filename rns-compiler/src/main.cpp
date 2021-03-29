@@ -68,7 +68,7 @@ s32 rns_main(s32 argc, char* argv[])
     file.ptr = file_buffer.ptr;
     file.len = static_cast<u32>(file_buffer.len);
 #else
-    const char file_content[] = "main :: () -> s32 { result : s32 = (10 + 4) * (5 - 3); return result; }";
+    const char file_content[] = "main :: () -> s32 { result : s32 = ((10 + 4) + (1 - 5 * 3 + (23 - 5))) * (123 * (5 - 4)); return result; }";
 
     file.ptr = (char*)file_content;
     file.len = rns_array_length(file_content);

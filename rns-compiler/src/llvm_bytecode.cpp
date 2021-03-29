@@ -399,7 +399,7 @@ namespace LLVM
                     char right_buffer[64];
                     sub.left.to_string(left_buffer);
                     sub.right.to_string(right_buffer);
-                    printf("%%%u = add %s %s, %s\n", sub.index, type_to_string(sub.type), left_buffer, right_buffer);
+                    printf("%%%u = sub %s %s, %s\n", sub.index, type_to_string(sub.type), left_buffer, right_buffer);
                 } break;
                 case Instruction::Mul:
                 {
