@@ -18,11 +18,11 @@ namespace AST
         Compiler& compiler;
 
         FunctionDeclarationBuffer function_declarations;
-        TypeBuffer type_declarations;
         StructBuffer struct_declarations;
         UnionBuffer union_declarations;
         EnumBuffer enum_declarations;
         FunctionTypeBuffer function_type_declarations;
+        TypeBuffer& type_declarations;
 
         ScopeBlock* current_scope;
         FunctionDeclaration* current_function;
@@ -351,9 +351,10 @@ namespace AST
             // @TODO: we should match it to the right operand
             it_decl->var_decl.value = nb.append(NodeType::IntLit);
             it_decl->var_decl.value->int_lit.bit_count = 32;
-            it_decl->var_decl.value->int_lit.is_signed = true;
+            it_decl->var_decl.value->int_lit.is_signed = false;
             it_decl->var_decl.value->int_lit.lit = 0;
             this->current_function->variables.append(it_decl);
+            this->current_scope->statements.append(it_decl);
 
             {
                 current_scope = for_loop->loop.prefix;
@@ -411,7 +412,11 @@ namespace AST
                 postfix_increment->bin_op.left = var_expr;
                 postfix_increment->bin_op.op = BinOp::Plus;
                 postfix_increment->bin_op.right = one_lit;
-                current_scope->statements.append(postfix_increment);
+                Node* postfix_assign = nb.append(NodeType::BinOp);
+                postfix_assign->bin_op.left = var_expr;
+                postfix_assign->bin_op.right = postfix_increment;
+                postfix_assign->bin_op.op = BinOp::Assign;
+                current_scope->statements.append(postfix_assign);
             }
             current_scope = parent_scope;
             return for_loop;
@@ -481,7 +486,7 @@ namespace AST
             while ((bin_op = is_bin_op()) != BinOp::None)
             {
                 assert(bin_op != BinOp::VariableDecl);
-                auto* right_expression = parse_primary_expression();
+                auto* right_expression = parse_expression();
                 if (!right_expression)
                 {
                     return nullptr;
@@ -776,7 +781,7 @@ const char* node_type_to_string(NodeType type)
 //}
 
 // @TODO: reconsider what type is to be returned from top level declarations
-AST::Result parse(Compiler& compiler, LexerResult& lexer_result)
+AST::Result parse(Compiler& compiler, LexerResult& lexer_result, TypeBuffer& type_declarations)
 {
     RNS_PROFILE_FUNCTION();
     compiler.subsystem = Compiler::Subsystem::Parser;
@@ -789,11 +794,11 @@ AST::Result parse(Compiler& compiler, LexerResult& lexer_result)
         .nb = NodeBuffer::create(&parser.allocator, 1024),
         .compiler = compiler,
         .function_declarations = FunctionDeclarationBuffer::create(&parser.allocator, 64),
-        .type_declarations = TypeBuffer::create(&parser.allocator, 64),
         .struct_declarations = StructBuffer::create(&parser.allocator, 64),
         .union_declarations = UnionBuffer::create(&parser.allocator, 64),
         .enum_declarations = EnumBuffer::create(&parser.allocator, 64),
         .function_type_declarations = FunctionTypeBuffer::create(&parser.allocator, 64),
+        .type_declarations = type_declarations,
     };
 
     while (parser.parser_it < parser.len)

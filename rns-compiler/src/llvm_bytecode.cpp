@@ -225,6 +225,14 @@ namespace LLVM
         {
             Equal,
             NotEqual,
+            UnsignedGreaterThan,
+            UnsignedGreaterOrEqual,
+            UnsignedLessThan,
+            UnsignedLessOrEqual,
+            SignedGreaterThan,
+            SignedGreaterOrEqual,
+            SignedLessThan,
+            SignedLessOrEqual,
         };
         ID id;
         Type* type;
@@ -242,6 +250,39 @@ namespace LLVM
                 case ID::NotEqual:
                 {
                     return "ne";
+                }
+                case ID::UnsignedGreaterThan:
+                {
+                    return "ugt";
+                }
+                case ID::UnsignedGreaterOrEqual:
+                {
+                    return "uge";
+                }
+
+                case ID::UnsignedLessThan:
+                {
+                    return "ult";
+                }
+                case ID::UnsignedLessOrEqual:
+                {
+                    return "ule";
+                }
+                case ID::SignedGreaterThan:
+                {
+                    return "sgt";
+                }
+                case ID::SignedGreaterOrEqual:
+                {
+                    return "sge";
+                }
+                case ID::SignedLessThan:
+                {
+                    return "slt";
+                }
+                case ID::SignedLessOrEqual:
+                {
+                    return "sle";
                 }
                 default:
                     RNS_NOT_IMPLEMENTED;
@@ -518,6 +559,23 @@ namespace LLVM
                 });
         }
 
+        void create_store(Node* var_node, Symbol assignment_value, FunctionDeclaration& ast_current_function)
+        {
+            assert(var_node);
+            assert(var_node->type == NodeType::VarDecl);
+            assert(var_node->var_decl.type);
+            InstructionInfo instruction;
+            instruction.id = Instruction::Store;
+            instruction.store.type = var_node->var_decl.type;
+            instruction.store.symbol = assignment_value;
+            instruction.store.alloca_i = get_alloca(var_node, ast_current_function);
+            assert(instruction.store.alloca_i);
+
+            instruction.store.alignment = 4;
+
+            append(instruction);
+        }
+
         InstructionInfo* get_alloca(Node* node, FunctionDeclaration& ast_current_function)
         {
             return (*current_alloca_buffer)[ast_current_function.variables.get_id_if_ref_buffer(node) + current_fn->conditional_alloca];
@@ -567,6 +625,42 @@ namespace LLVM
                 .result = {.index = label_index }
             };
             return block_label;
+        }
+
+        void append_branch(BasicBlock* origin, BasicBlock* destination)
+        {
+            auto* original_scope = current;
+
+            current = origin;
+            auto dest_label = get_block_label(destination);
+            InstructionInfo br_instruction = {
+                .id = Instruction::Br,
+                .br = {
+                    .if_label = dest_label,
+                },
+            };
+            append(br_instruction);
+            current = original_scope;
+        }
+
+        void append_conditional_branch(Symbol condition, BasicBlock* origin_block, BasicBlock* if_block, BasicBlock* else_block, TypeBuffer& type_declarations)
+        {
+            auto* original_scope = current;
+
+            current = origin_block;
+            auto if_label = get_block_label(if_block);
+            auto else_label = get_block_label(else_block);
+            InstructionInfo br_instruction = {
+                .id = Instruction::Br,
+                .br = {
+                    .type = &type_declarations[(u32)NativeTypeID::U1],
+                    .condition = condition,
+                    .if_label = if_label,
+                    .else_label = else_label,
+                },
+            };
+            append(br_instruction);
+            current = original_scope;
         }
 
         void print_block(BasicBlock* basic_block)
@@ -712,6 +806,30 @@ namespace LLVM
 
                         return result;
                     } break;
+                    case BinOp::Cmp_LessThan:
+                    {
+                        InstructionInfo icmp_instruction = {
+                            .id = Instruction::ICmp,
+                            .icmp = {
+                                .id = ICmp::ID::SignedLessThan, // @TODO: remove signed value and compute based on the operands
+                                // @TODO: remove hardcoded value
+                                .type = &type_declarations[static_cast<u32>(NativeTypeID::S32)],
+                                .left = left_symbol,
+                                .right = right_symbol,
+                                .index = ir_builder.current_fn->next_index++,
+                            },
+                        };
+
+                        ir_builder.append(icmp_instruction);
+
+                        Symbol result = {
+                            .type = Symbol::ID::Index,
+                            .result = {.index = icmp_instruction.icmp.index},
+                        };
+                        ir_builder.append(result);
+
+                        return result;
+                    } break;
                     default:
                         RNS_NOT_IMPLEMENTED;
                         break;
@@ -785,19 +903,11 @@ namespace LLVM
         {
             case NodeType::VarDecl:
             {
-                if (node->var_decl.value)
+                auto* ast_assignment_value = node->var_decl.value;
+                if (ast_assignment_value)
                 {
-                    auto symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, node->var_decl.value);
-                    InstructionInfo instruction;
-                    instruction.id = Instruction::Store;
-                    instruction.store.type = node->var_decl.type;
-                    instruction.store.symbol = symbol;
-                    instruction.store.alloca_i = ir_builder.get_alloca(node, current_function);
-                    assert(instruction.store.alloca_i);
-
-                    instruction.store.alignment = 4;
-
-                    ir_builder.append(instruction);
+                    auto assignment_value = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, ast_assignment_value);
+                    ir_builder.create_store(node, assignment_value, current_function);
                 }
             } break;
             case NodeType::Ret:
@@ -858,7 +968,6 @@ namespace LLVM
                             .else_label = else_label,
                         },
                     });
-                ir_builder.print_block(ir_builder.current);
                 ir_builder.current = if_bb;
                 ir_builder.append({
                         .id = Instruction::Br,
@@ -866,7 +975,6 @@ namespace LLVM
                             .if_label = epilogue_label,
                         },
                     });
-                ir_builder.print_block(ir_builder.current);
                 ir_builder.current = else_bb;
                 ir_builder.append({
                         .id = Instruction::Br,
@@ -874,7 +982,6 @@ namespace LLVM
                             .if_label = epilogue_label,
                         },
                     });
-                ir_builder.print_block(ir_builder.current);
 
                 ir_builder.current = branch_epilogue_bb;
 
@@ -912,8 +1019,69 @@ namespace LLVM
                 }
                 else
                 {
-
+                    RNS_NOT_IMPLEMENTED;
                 }
+            } break;
+            case NodeType::Loop:
+            {
+                auto* ast_loop_prefix = node->loop.prefix;
+                auto* ast_loop_body = node->loop.body;
+                auto* ast_loop_postfix = node->loop.postfix;
+
+                auto* loop_parent_basic_block = ir_builder.current;
+
+                auto* loop_prefix_basic_block = ir_builder.append_basic_block(allocator);
+                ir_builder.append_branch(loop_parent_basic_block, loop_prefix_basic_block);
+
+                // @Info: this is supposed to be the loop condition. @TODO: come up with a better name
+                assert(ast_loop_prefix->statements.len == 1);
+                auto* loop_condition = ast_loop_prefix->statements[0];
+
+                Symbol cmp_result = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, loop_condition, &type_declarations[(u32)NativeTypeID::U1]);
+
+                ir_builder.current = loop_parent_basic_block;
+                auto* loop_body_basic_block = ir_builder.append_basic_block(allocator);
+
+                for (auto* loop_st_node : ast_loop_body->statements)
+                {
+                    do_statement_node(allocator, ir_builder, type_declarations, current_function, loop_st_node);
+                }
+
+                ir_builder.current = loop_parent_basic_block;
+                auto* loop_postfix_basic_block = ir_builder.append_basic_block(allocator);
+
+                for (auto* loop_postfix_st_node : ast_loop_postfix->statements)
+                {
+                    do_statement_node(allocator, ir_builder, type_declarations, current_function, loop_postfix_st_node);
+                }
+
+                ir_builder.current = loop_parent_basic_block;
+                auto* loop_end_basic_block = ir_builder.append_basic_block(allocator);
+                ir_builder.current = loop_parent_basic_block;
+
+                // @TODO: make conditional branch
+                ir_builder.append_conditional_branch(cmp_result, loop_prefix_basic_block, loop_body_basic_block, loop_end_basic_block, type_declarations);
+                ir_builder.append_branch(loop_body_basic_block, loop_postfix_basic_block);
+                ir_builder.append_branch(loop_postfix_basic_block, loop_prefix_basic_block);
+
+                ir_builder.current = loop_end_basic_block;
+            } break;
+            case NodeType::BinOp:
+            {
+                assert(node->bin_op.op == BinOp::Assign);
+
+                auto* ast_assignment_value = node->bin_op.right;
+                auto* var_expr_node = node->bin_op.left;
+                assert(var_expr_node);
+                assert(var_expr_node->type == NodeType::VarExpr);
+                auto* var_decl_node = var_expr_node->var_expr.mentioned;
+                assert(var_decl_node);
+                assert(var_decl_node->type == NodeType::VarDecl);
+                auto* var_type = var_decl_node->var_decl.type;
+                assert(var_type);
+                auto assignment_value = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, ast_assignment_value, var_type);
+
+                ir_builder.create_store(var_decl_node, assignment_value, current_function);
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
@@ -946,11 +1114,14 @@ namespace LLVM
                 break;
             }
 
-            bool conditional_alloca = function.type->ret_type->id != TypeID::VoidType;
-
             auto& main_scope_statements = function.scope_blocks[0].statements;
+
+
+            bool conditional_alloca = function.type->ret_type->id != TypeID::VoidType;
             if (conditional_alloca)
             {
+                conditional_alloca = false;
+
                 for (auto* st_node : main_scope_statements)
                 {
                     if (st_node->type == NodeType::Conditional)
@@ -1009,6 +1180,13 @@ namespace LLVM
             for (auto* st_node : main_scope_statements)
             {
                 do_statement_node(&llvm_allocator, ir_builder, type_declarations, function, st_node);
+            }
+
+            ir_builder.print_block(&ir_builder.current_fn->entry_block);
+
+            for (auto& basic_block : ir_builder.current_fn->basic_blocks)
+            {
+                ir_builder.print_block(&basic_block);
             }
         }
     }
