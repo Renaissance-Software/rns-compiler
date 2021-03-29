@@ -219,6 +219,20 @@ namespace LLVM
         LLVMID index;
     };
 
+    struct Sub
+    {
+        Type* type;
+        Symbol left, right;
+        LLVMID index;
+    };
+
+    struct Mul
+    {
+        Type* type;
+        Symbol left, right;
+        LLVMID index;
+    };
+
     struct ICmp
     {
         enum class ID : u8
@@ -333,6 +347,8 @@ namespace LLVM
             Store store;
             Load load;
             Add add;
+            Sub sub;
+            Mul mul;
             ICmp icmp;
             Br br;
         };
@@ -376,6 +392,22 @@ namespace LLVM
                     add.left.to_string(left_buffer);
                     add.right.to_string(right_buffer);
                     printf("%%%u = add %s %s, %s\n", add.index, type_to_string(add.type), left_buffer, right_buffer);
+                } break;
+                case Instruction::Sub:
+                {
+                    char left_buffer[64];
+                    char right_buffer[64];
+                    sub.left.to_string(left_buffer);
+                    sub.right.to_string(right_buffer);
+                    printf("%%%u = add %s %s, %s\n", sub.index, type_to_string(sub.type), left_buffer, right_buffer);
+                } break;
+                case Instruction::Mul:
+                {
+                    char left_buffer[64];
+                    char right_buffer[64];
+                    mul.left.to_string(left_buffer);
+                    mul.right.to_string(right_buffer);
+                    printf("%%%u = mul %s %s, %s\n", mul.index, type_to_string(mul.type), left_buffer, right_buffer);
                 } break;
                 case Instruction::ICmp:
                 {
@@ -782,6 +814,50 @@ namespace LLVM
                         ir_builder.append(result);
                         return result;
                     } break;
+                    case BinOp::Minus:
+                    {
+                        InstructionInfo sub_instruction = {
+                            .id = Instruction::Sub,
+                            .sub = {
+                                .type = expected_type,
+                                .left = left_symbol,
+                                .right = right_symbol,
+                                .index = ir_builder.current_fn->next_index++,
+                            }
+                        };
+                        ir_builder.append(sub_instruction);
+
+                        Symbol result = {
+                            .type = Symbol::ID::Index,
+                            .result = {
+                                .index = sub_instruction.add.index,
+                            }
+                        };
+                        ir_builder.append(result);
+                        return result;
+                    } break;
+                    case BinOp::Mul:
+                    {
+                        InstructionInfo mul_instruction = {
+                            .id = Instruction::Mul,
+                            .mul = {
+                                .type = expected_type,
+                                .left = left_symbol,
+                                .right = right_symbol,
+                                .index = ir_builder.current_fn->next_index++,
+                            }
+                        };
+                        ir_builder.append(mul_instruction);
+
+                        Symbol result = {
+                            .type = Symbol::ID::Index,
+                            .result = {
+                                .index = mul_instruction.mul.index,
+                            }
+                        };
+                        ir_builder.append(result);
+                        return result;
+                    } break;
                     case BinOp::Cmp_Equal:
                     {
                         InstructionInfo icmp_instruction = {
@@ -904,9 +980,11 @@ namespace LLVM
             case NodeType::VarDecl:
             {
                 auto* ast_assignment_value = node->var_decl.value;
+                auto* var_type = node->var_decl.type;
+                assert(var_type);
                 if (ast_assignment_value)
                 {
-                    auto assignment_value = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, ast_assignment_value);
+                    auto assignment_value = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, ast_assignment_value, var_type);
                     ir_builder.create_store(node, assignment_value, current_function);
                 }
             } break;

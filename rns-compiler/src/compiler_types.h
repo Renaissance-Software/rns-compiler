@@ -8,10 +8,92 @@ using RNS::Allocator;
 
 extern "C" s32 printf(const char*, ...);
 
+enum class BinOp
+{
+    None,
+    Plus,
+    Minus,
+    Mul,
+    VariableDecl,
+    Assign,
+    Cmp_Equal,
+    Cmp_NotEqual,
+    Cmp_LessThan,
+    Cmp_GreaterThan,
+    Cmp_LessThanOrEqual,
+    Cmp_GreaterThanOrEqual,
+    Count,
+};
+
+inline bool is_cmp_binop(BinOp binop)
+{
+    return binop >= BinOp::Cmp_Equal && binop <= BinOp::Cmp_GreaterThanOrEqual;
+}
+
+enum class OperatorPrecedenceRule
+{
+    Unary_ArraySubscript_FunctionCall_MemberAccess_CompoundLiteral,
+    Unary_LogicalNot_BitwiseNot_Cast_Dereference_AddressOf_SizeOf_AlignOf,
+    Binary_Multiplication_Division_Remainder,
+    Binary_Addition_Substraction,
+    Binary_BitwiseLeftShit_BitwiseRightShift,
+    Binary_RelationalOperators,
+    Binary_RelationalOperators_EqualNotEqual,
+    Binary_BitwiseAND,
+    Binary_BitwiseXOR,
+    Binary_BitwiseOR,
+    Binary_LogicalAND,
+    Binary_LogicalOR,
+    Binary_AssignmentOperators,
+};
+
+struct OperatorPrecedence
+{
+    OperatorPrecedenceRule rules[(u32)BinOp::Count];
+};
+
+inline constexpr OperatorPrecedence initialize_precedence_rules()
+{
+#define precedence_rule(_operator_, _rule_) operator_precedence.rules[(u32)BinOp:: ## _operator_] = OperatorPrecedenceRule:: ## _rule_
+    OperatorPrecedence operator_precedence;
+    precedence_rule(Plus, Binary_Addition_Substraction);
+    precedence_rule(Minus, Binary_Addition_Substraction);
+    precedence_rule(Mul, Binary_Multiplication_Division_Remainder);
+    precedence_rule(Assign, Binary_AssignmentOperators);
+    precedence_rule(Cmp_Equal, Binary_RelationalOperators_EqualNotEqual);
+    precedence_rule(Cmp_NotEqual, Binary_RelationalOperators_EqualNotEqual);
+    precedence_rule(Cmp_LessThan, Binary_RelationalOperators);
+    precedence_rule(Cmp_GreaterThan, Binary_RelationalOperators);
+    precedence_rule(Cmp_LessThanOrEqual, Binary_RelationalOperators);
+    precedence_rule(Cmp_GreaterThanOrEqual, Binary_RelationalOperators);
+#undef precedence_rule
+
+    return operator_precedence;
+}
+
+inline OperatorPrecedence operator_precedence = initialize_precedence_rules();
+
 namespace Typing
 {
     struct Type;
     using TypeBuffer = RNS::Buffer<Type>;
+
+    enum class NativeTypeID : u8
+    {
+        None,
+        U1,
+        U8,
+        U16,
+        U32,
+        U64,
+        S8,
+        S16,
+        S32,
+        S64,
+        F32,
+        F64,
+        Count,
+    };
 
     enum class TypeID : u8
     {
@@ -112,44 +194,7 @@ namespace Typing
 using namespace Typing;
 namespace Lexer
 {
-    enum class BinOp
-    {
-        None,
-        Plus,
-        Minus,
-        Function,
-        VariableDecl,
-        Assign,
-        Cmp_Equal,
-        Cmp_NotEqual,
-        Cmp_LessThan,
-        Cmp_GreaterThan,
-        Cmp_LessThanOrEqual,
-        Cmp_GreaterThanOrEqual,
-        Count,
-    };
 
-    enum class NativeTypeID : u8
-    {
-        None,
-        U1,
-        U8,
-        U16,
-        U32,
-        U64,
-        S8,
-        S16,
-        S32,
-        S64,
-        F32,
-        F64,
-        Count,
-    };
-
-    inline bool is_cmp_binop(BinOp binop)
-    {
-        return binop >= BinOp::Cmp_Equal && binop <= BinOp::Cmp_GreaterThanOrEqual;
-    }
 
     enum class TokenID : u8
     {
@@ -369,19 +414,18 @@ namespace AST
         Loop,
     };
 
-
     struct BinaryOp
     {
         Node* left;
         Node* right;
-        Lexer::BinOp op;
+        BinOp op;
+        bool parenthesis;
     };
 
     struct RetExpr
     {
         Node* expr;
     };
-
 
     struct VarExpr
     {

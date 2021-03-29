@@ -112,11 +112,11 @@ namespace AST
                     {
                         if (expect('('))
                         {
-                            return BinOp::Function;
+                            RNS_UNREACHABLE;
+                            //return BinOp::Function;
                         }
                         else
                         {
-                            RNS_UNREACHABLE;
                             return BinOp::None;
                         }
                     }
@@ -146,6 +146,10 @@ namespace AST
                     return BinOp::Minus;
                 }
                 case TokenID::Asterisk:
+                {
+                    consume();
+                    return BinOp::Mul;
+                }
                 case TokenID::Slash:
                     // single char
                     RNS_NOT_IMPLEMENTED;
@@ -163,6 +167,8 @@ namespace AST
                 default:
                     return BinOp::None;
             }
+
+            return BinOp::None;
         }
 
         Type* get_native_type(NativeTypeID native_type)
@@ -191,7 +197,7 @@ namespace AST
         Node* find_existing_variable(Token* token)
         {
             RNS::String name = { token->symbol, token->offset };
-            for (auto var : current_function->variables)
+            for (auto* var : current_function->variables)
             {
                 assert(var->type == NodeType::VarDecl);
                 if (var->var_decl.name.equal(&name))
@@ -418,6 +424,7 @@ namespace AST
                 postfix_assign->bin_op.op = BinOp::Assign;
                 current_scope->statements.append(postfix_assign);
             }
+
             current_scope = parent_scope;
             return for_loop;
         }
@@ -486,17 +493,37 @@ namespace AST
             while ((bin_op = is_bin_op()) != BinOp::None)
             {
                 assert(bin_op != BinOp::VariableDecl);
-                auto* right_expression = parse_expression();
-                if (!right_expression)
+                auto* binary_op_left_expression = *left_expr;
+                auto* binary_op_right_expression = parse_primary_expression();
+
+                if (!binary_op_right_expression)
                 {
                     return nullptr;
                 }
 
-                Node* node = nb.append(NodeType::BinOp);
-                node->bin_op.op = bin_op;
-                node->bin_op.left = *left_expr;
-                node->bin_op.right = right_expression;
-                *left_expr = node;
+                // @TODO: bad practice to use tagged union fields without knowing if they are what you want, but useful here
+                auto left_expression_operator_precedence = operator_precedence.rules[(u32)binary_op_left_expression->bin_op.op];
+                auto right_expression_operator_precedence = operator_precedence.rules[(u32)bin_op];
+
+                if (binary_op_left_expression->type == NodeType::BinOp && right_expression_operator_precedence < left_expression_operator_precedence) // @Info: this means: right expression precedes left one
+                {
+                    Node* right_operand_of_left_binary_expression = binary_op_left_expression->bin_op.right;
+                    binary_op_left_expression->bin_op.right = nb.append(NodeType::BinOp);
+                    auto* new_prioritized_expression = binary_op_left_expression->bin_op.right;
+                    new_prioritized_expression->bin_op.op = bin_op;
+                    new_prioritized_expression->bin_op.left = right_operand_of_left_binary_expression;
+                    new_prioritized_expression->bin_op.right = binary_op_right_expression;
+                    // @TODO: redundant?
+                    *left_expr = binary_op_left_expression;
+                }
+                else
+                {
+                    Node* node = nb.append(NodeType::BinOp);
+                    node->bin_op.op = bin_op;
+                    node->bin_op.left = binary_op_left_expression;
+                    node->bin_op.right = binary_op_right_expression;
+                    *left_expr = node;
+                }
             }
 
             return *left_expr;
