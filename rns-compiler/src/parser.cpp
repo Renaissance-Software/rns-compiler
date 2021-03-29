@@ -255,6 +255,16 @@ namespace AST
                         return nullptr;
                     }
                 }
+                case TokenID::LeftParen:
+                {
+                    consume();
+                    auto* parenthesis_expr = parse_expression();
+                    auto* right = expect_and_consume(')');
+                    assert(right);
+                    assert(parenthesis_expr->type == NodeType::BinOp);
+                    parenthesis_expr->bin_op.parenthesis = true;
+                    return parenthesis_expr;
+                } break;
                 case TokenID::Semicolon:
                     return nullptr;
                 default:
@@ -505,7 +515,10 @@ namespace AST
                 auto left_expression_operator_precedence = operator_precedence.rules[(u32)binary_op_left_expression->bin_op.op];
                 auto right_expression_operator_precedence = operator_precedence.rules[(u32)bin_op];
 
-                if (binary_op_left_expression->type == NodeType::BinOp && right_expression_operator_precedence < left_expression_operator_precedence) // @Info: this means: right expression precedes left one
+                if (binary_op_left_expression->type == NodeType::BinOp &&
+                    right_expression_operator_precedence < left_expression_operator_precedence &&
+                    !binary_op_left_expression->bin_op.parenthesis &&
+                    (binary_op_right_expression->type != NodeType::BinOp || (binary_op_right_expression->type == NodeType::BinOp && !binary_op_right_expression->bin_op.parenthesis))) // @Info: this means: right expression precedes left one
                 {
                     Node* right_operand_of_left_binary_expression = binary_op_left_expression->bin_op.right;
                     binary_op_left_expression->bin_op.right = nb.append(NodeType::BinOp);
