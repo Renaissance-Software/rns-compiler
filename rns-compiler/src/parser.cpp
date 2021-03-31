@@ -231,7 +231,7 @@ namespace AST
             return nullptr;
         }
 
-        Node* parse_primary_expression()
+        Node* parse_primary_expression(Node* parent)
         {
             auto* t = get_next_token();
             auto id = t->get_id();
@@ -241,7 +241,7 @@ namespace AST
                 case TokenID::IntegerLit:
                 {
                     this->consume();
-                    Node* node = nb.append(NodeType::IntLit);
+                    Node* node = nb.append(NodeType::IntLit, parent);
                     node->int_lit.lit = t->int_lit;
                     return node;
                 }
@@ -251,14 +251,14 @@ namespace AST
                     auto* next_t = expect_and_consume(':');
                     if (next_t)
                     {
-                        auto* var_decl_node = nb.append(NodeType::VarDecl);
+                        auto* var_decl_node = nb.append(NodeType::VarDecl, parent);
                         var_decl_node->var_decl.name.ptr = t->symbol;
                         var_decl_node->var_decl.name.len = t->offset;
                         return var_decl_node;
                     }
                     else
                     {
-                        auto* var_expr_node = nb.append(NodeType::VarExpr);
+                        auto* var_expr_node = nb.append(NodeType::VarExpr, parent);
                         var_expr_node->var_expr.mentioned = find_existing_variable(t);
                         assert(var_expr_node->var_expr.mentioned);
                         return var_expr_node;
@@ -280,7 +280,7 @@ namespace AST
                 case TokenID::LeftParen:
                 {
                     consume();
-                    auto* parenthesis_expr = parse_expression();
+                    auto* parenthesis_expr = parse_expression(parent);
                     auto* right = expect_and_consume(')');
                     assert(right);
                     assert(parenthesis_expr->type == NodeType::BinOp);
@@ -297,21 +297,21 @@ namespace AST
             return nullptr;
         }
 
-        Node* parse_conditional(Node* current_parent)
+        Node* parse_conditional(Node* parent)
         {
             consume();
-            auto* node = nb.append(NodeType::Conditional);
+            auto* node = nb.append(NodeType::Conditional, parent);
 
-            node->conditional.condition = parse_expression();
+            node->conditional.condition = parse_expression(node);
             assert(node->conditional.condition);
 
             bool braces = expect_and_consume('{');
 
-            auto* if_block = nb.append(NodeType::Block);
+            auto* if_block = nb.append(NodeType::Block, node);
             node->conditional.if_block = if_block;
             current_function->function.scope_blocks.append(if_block);
             if_block->block.type = Block::Type::ConditionalBlock;
-            if_block->block.parent = current_scope;
+            if_block->parent = node;
             current_scope = if_block;
 
             if (braces)
@@ -331,14 +331,13 @@ namespace AST
                 if_block->block.statements.append(st_node);
             }
 
-            current_scope = current_scope->block.parent;
+            current_scope = current_scope->parent;
 
             if (expect_and_consume_if_keyword(KeywordID::Else))
             {
-                auto* else_block = nb.append(NodeType::Block);
+                auto* else_block = nb.append(NodeType::Block, node);
                 node->conditional.else_block = else_block;
                 current_function->function.scope_blocks.append(else_block);
-                else_block->block.parent = current_scope;
                 else_block->block.type = Block::Type::ConditionalBlock;
                 current_scope = else_block;
 
@@ -360,38 +359,24 @@ namespace AST
                     assert(st_node);
                     else_block->block.statements.append(st_node);
                 }
-                current_scope = current_scope->block.parent;
+                current_scope = current_scope->parent;
             }
-#if 0
-            else
-            {
-                node->conditional.fake_else = true;
-                auto* fake_else_block = nb.append(NodeType::Block);
-                node->conditional.else_block = fake_else_block;
-                current_function->function.scope_blocks.append(fake_else_block);
-                fake_else_block->block.parent = current_scope;
-                fake_else_block->block.type = Block::Type::ConditionalBlock;
-                current_scope = fake_else_block;
-            }
-#endif
-
 
             return node;
         }
 
-        Node* parse_for()
+        Node* parse_for(Node* parent)
         {
             auto* for_t = expect_and_consume_if_keyword(KeywordID::For);
             assert(for_t);
-            Node* for_loop = nb.append(NodeType::Loop);
+            Node* for_loop = nb.append(NodeType::Loop, parent);
             auto* parent_scope = current_scope;
 
             auto create_loop_block = [&](Block::Type loop_block_type)
             {
-                auto* block_node = nb.append(NodeType::Block);
+                auto* block_node = nb.append(NodeType::Block, for_loop);
                 current_function->function.scope_blocks.append(block_node);
                 block_node->block.type = loop_block_type;
-                block_node->block.parent = for_loop;
 
                 return block_node;
             };
@@ -401,13 +386,13 @@ namespace AST
             for_loop->loop.postfix = create_loop_block(Block::Type::LoopBody);
 
             auto* it_symbol = expect_and_consume(TokenID::Symbol);
-            Node* it_decl = nb.append(NodeType::VarDecl);
+            Node* it_decl = nb.append(NodeType::VarDecl, for_loop);
             it_decl->var_decl.is_fn_arg = false;
             it_decl->var_decl.name = RNS::String{ it_symbol->symbol, it_symbol->offset };
             it_decl->var_decl.scope = current_scope;
             it_decl->var_decl.type = &type_declarations[(u32)NativeTypeID::S32];
             // @TODO: we should match it to the right operand
-            it_decl->var_decl.value = nb.append(NodeType::IntLit);
+            it_decl->var_decl.value = nb.append(NodeType::IntLit, it_decl);
             it_decl->var_decl.value->int_lit.bit_count = 32;
             it_decl->var_decl.value->int_lit.is_signed = false;
             it_decl->var_decl.value->int_lit.lit = 0;
@@ -425,7 +410,7 @@ namespace AST
                 {
                     case TokenID::IntegerLit:
                     {
-                        right_node = nb.append(NodeType::IntLit);
+                        right_node = nb.append(NodeType::IntLit, for_loop->loop.prefix);
                         auto literal = t->int_lit;
                         assert(literal >= 0 && literal <= UINT32_MAX);
                         right_node->int_lit.bit_count = 32;
@@ -438,9 +423,9 @@ namespace AST
                 }
 
                 assert(right_node);
-                Node* it_expr = nb.append(NodeType::VarExpr);
+                Node* it_expr = nb.append(NodeType::VarExpr, for_loop->loop.prefix);
                 it_expr->var_expr.mentioned = it_decl;
-                Node* cmp_op = nb.append(NodeType::BinOp);
+                Node* cmp_op = nb.append(NodeType::BinOp, for_loop->loop.prefix);
                 cmp_op->bin_op.op = BinOp::Cmp_LessThan;
                 cmp_op->bin_op.left = it_expr;
                 cmp_op->bin_op.right = right_node;
@@ -460,17 +445,17 @@ namespace AST
             {
                 current_scope = for_loop->loop.postfix;
                 current_scope->block.statements = current_scope->block.statements.create(&allocator, 1);
-                Node* var_expr = nb.append(NodeType::VarExpr);
+                Node* var_expr = nb.append(NodeType::VarExpr, current_scope);
                 var_expr->var_expr.mentioned = it_decl;
-                Node* one_lit = nb.append(NodeType::IntLit);
+                Node* one_lit = nb.append(NodeType::IntLit, current_scope);
                 one_lit->int_lit.bit_count = 32;
                 one_lit->int_lit.is_signed = false;
                 one_lit->int_lit.lit = 1;
-                Node* postfix_increment = nb.append(NodeType::BinOp);
+                Node* postfix_increment = nb.append(NodeType::BinOp, current_scope);
                 postfix_increment->bin_op.left = var_expr;
                 postfix_increment->bin_op.op = BinOp::Plus;
                 postfix_increment->bin_op.right = one_lit;
-                Node* postfix_assign = nb.append(NodeType::BinOp);
+                Node* postfix_assign = nb.append(NodeType::BinOp, current_scope);
                 postfix_assign->bin_op.left = var_expr;
                 postfix_assign->bin_op.right = postfix_increment;
                 postfix_assign->bin_op.op = BinOp::Assign;
@@ -486,13 +471,13 @@ namespace AST
             auto* break_token = expect_and_consume_if_keyword(KeywordID::Break);
             assert(break_token);
 
-            auto* break_node = nb.append(NodeType::Break);
+            auto* break_node = nb.append(NodeType::Break, parent);
             assert(current_scope);
             break_node->break_.block = current_scope;
             return break_node;
         }
 
-        Node* parse_statement(Node* current_parent = nullptr)
+        Node* parse_statement(Node* parent)
         {
             auto* t = get_next_token();
             TokenID id = static_cast<TokenID>(t->id);
@@ -507,19 +492,19 @@ namespace AST
                     {
                         case KeywordID::Return:
                         {
-                            statement = parse_return();
+                            statement = parse_return(parent);
                         } break;
                         case KeywordID::If:
                         {
-                            statement = parse_conditional(current_parent);
+                            statement = parse_conditional(parent);
                         } break;
                         case KeywordID::For:
                         {
-                            statement = parse_for();
+                            statement = parse_for(parent);
                         } break;
                         case KeywordID::Break:
                         {
-                            statement = parse_break(current_parent);
+                            statement = parse_break(parent);
                         } break;
                         default:
                             RNS_NOT_IMPLEMENTED;
@@ -528,7 +513,7 @@ namespace AST
                 } break;
                 case TokenID::Symbol:
                 {
-                    statement = parse_expression();
+                    statement = parse_expression(parent);
                 } break;
                 case TokenID::RightBrace:
                     break;
@@ -545,16 +530,16 @@ namespace AST
             return statement;
         }
 
-        Node* parse_return()
+        Node* parse_return(Node* parent)
         {
             consume();
-            Node* ret_expr = parse_expression();
-            Node* node = nb.append(NodeType::Ret);
+            Node* node = nb.append(NodeType::Ret, parent);
+            Node* ret_expr = parse_expression(node);
             node->ret.expr = ret_expr;
             return node;
         }
 
-        Node* parse_right_expression(Node** left_expr)
+        Node* parse_right_expression(Node** left_expr, Node* parent)
         {
             BinOp bin_op;
 
@@ -562,7 +547,7 @@ namespace AST
             {
                 assert(bin_op != BinOp::VariableDecl);
                 auto* binary_op_left_expression = *left_expr;
-                auto* binary_op_right_expression = parse_primary_expression();
+                auto* binary_op_right_expression = parse_primary_expression(parent);
 
                 if (!binary_op_right_expression)
                 {
@@ -578,7 +563,7 @@ namespace AST
                 if (right_precedes_left)
                 {
                     Node* right_operand_of_left_binary_expression = binary_op_left_expression->bin_op.right;
-                    binary_op_left_expression->bin_op.right = nb.append(NodeType::BinOp);
+                    binary_op_left_expression->bin_op.right = nb.append(NodeType::BinOp, parent);
                     auto* new_prioritized_expression = binary_op_left_expression->bin_op.right;
                     new_prioritized_expression->bin_op.op = bin_op;
                     new_prioritized_expression->bin_op.left = right_operand_of_left_binary_expression;
@@ -588,7 +573,7 @@ namespace AST
                 }
                 else
                 {
-                    Node* node = nb.append(NodeType::BinOp);
+                    Node* node = nb.append(NodeType::BinOp, parent);
                     node->bin_op.op = bin_op;
                     node->bin_op.left = binary_op_left_expression;
                     node->bin_op.right = binary_op_right_expression;
@@ -599,9 +584,9 @@ namespace AST
             return *left_expr;
         }
 
-        Node* parse_expression()
+        Node* parse_expression(Node* parent)
         {
-            Node* left = parse_primary_expression();
+            Node* left = parse_primary_expression(parent);
             if (!left)
             {
                 return nullptr;
@@ -639,7 +624,7 @@ namespace AST
 
                 if (expect_and_consume('='))
                 {
-                    var_decl_node->var_decl.value = parse_expression();
+                    var_decl_node->var_decl.value = parse_expression(parent);
                 }
 
                 // @TODO: should append to the current scope
@@ -653,13 +638,12 @@ namespace AST
             }
             else
             {
-                return parse_right_expression(&left);
+                return parse_right_expression(&left, parent);
             }
         }
 
         void parse_block(Node* scope_block, bool allow_no_braces)
         {
-            scope_block->block.parent = current_scope;
             current_scope = scope_block;
 
             bool has_braces = expect_and_consume('{');
@@ -723,7 +707,7 @@ namespace AST
                 return nullptr;
             }
 
-            auto* function_node = nb.append(NodeType::Function);
+            auto* function_node = nb.append(NodeType::Function, nullptr);
             function_node->function = {
                 .scope_blocks = Buffer<Node*>::create(&allocator, 16),
             };
@@ -748,7 +732,7 @@ namespace AST
 
             while (arg_left_to_parse)
             {
-                auto* node = parse_expression();
+                auto* node = parse_expression(function_node);
                 if (!node)
                 {
                     compiler.print_error({}, "error parsing argument %lld", current_function->function.variables.len + 1);
@@ -795,7 +779,7 @@ namespace AST
                 fn_type.ret_type = get_native_type(NativeTypeID::None);
             }
 
-            function_node->function.type = nb.append(NodeType::FunctionType);
+            function_node->function.type = nb.append(NodeType::FunctionType, function_node);
             function_type_declarations.append(function_node->function.type);
             function_node->function.type->function_type = fn_type;
 
@@ -804,10 +788,10 @@ namespace AST
                 return nullptr;
             }
 
-            current_scope = nb.append(NodeType::Block);
+            current_scope = nb.append(NodeType::Block, function_node);
             function_node->function.scope_blocks.append(current_scope);
             current_scope->block.type = Block::Type::Function;
-            current_scope->block.parent = nullptr;
+            current_scope->parent = nullptr;
 
             parse_block(current_scope, false);
 

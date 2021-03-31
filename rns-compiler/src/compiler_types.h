@@ -450,7 +450,6 @@ namespace AST
             Function,
         };
         NodeRefBuffer statements;
-        Node* parent;
         Type type;
     };
 
@@ -511,16 +510,22 @@ namespace AST
             EnumType enum_decl;
             FunctionType function_type;
         };
+        Node* parent;
     };
 
     // @TODO: we are transforming this to inherit from the RNS-lib buffer. This may have some drawbacks. Come back to this when the compiler is more mature.
     struct NodeBuffer : public RNS::Buffer<Node>
     {
-        Node* append(NodeType type)
+        Node* append(NodeType type, Node* parent)
         {
+            if (type != NodeType::Function)
+            {
+                assert(parent);
+            }
             assert(len + 1 <= cap);
             Node* result = &ptr[len++];
             result->type = type;
+            result->parent = parent;
             return result;
         }
     };

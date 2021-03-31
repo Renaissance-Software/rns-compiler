@@ -1044,7 +1044,7 @@ namespace LLVM
                             break;
                         }
 
-                        scope_to_jump_to = scope_to_jump_to->block.parent;
+                        scope_to_jump_to = scope_to_jump_to->parent;
                     }
 
                     assert(scope_to_jump_to);
@@ -1148,21 +1148,20 @@ namespace LLVM
                 work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_if_block, if_basic_block);
 
                 auto* ast_else_block = st_node->conditional.else_block;
+                // Info: if there's an else block, it generates around that. Else it's an empty block (an if-end block, to be clear)
+                BasicBlock* next_basic_block = ir_builder.append_basic_block(allocator, ast_else_block); 
                 if (ast_else_block)
                 {
-                    assert(ast_else_block);
-                    assert(ast_else_block->block.type == Block::Type::ConditionalBlock);
-
-                    auto* else_basic_block = ir_builder.append_basic_block(allocator, ast_else_block);
-                    work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_else_block, else_basic_block);
-                    ir_builder.append_conditional_branch(condition_symbol, current_scope, if_basic_block, else_basic_block, type_declarations);
+                    work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_else_block, next_basic_block);
                 }
                 else
                 {
-                    auto* if_end_basic_block = ir_builder.append_basic_block(allocator);
-                    ir_builder.append_conditional_branch(condition_symbol, current_scope, if_basic_block, if_end_basic_block, type_declarations);
+                    // generate some kind of patch here
+                    //PatchBlock patch = {
+                    //    .ast_true_jump = st_node->conditional.pa
+                    //}
                 }
-
+                ir_builder.append_conditional_branch(condition_symbol, current_scope, if_basic_block, next_basic_block, type_declarations);
             } break;
             case NodeType::Loop:
             {
