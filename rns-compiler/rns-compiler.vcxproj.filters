@@ -22,6 +22,6 @@
     <ClInclude Include="src\typechecker.h" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="src\test_files.inc" />
+    <None Include="src\test_files.h" />
   </ItemGroup>
 </Project>

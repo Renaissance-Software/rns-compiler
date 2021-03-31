@@ -353,18 +353,19 @@ namespace LLVM
     };
 
     struct BasicBlock;
+
     struct PatchBlock
     {
         JumpType type;
         HighLevelType keyword;
         Symbol condition; // @Info: This is just for the conditional jump
-        BasicBlock* ir_block;
-        ScopeBlock* ast_true_jump;
-        ScopeBlock* ast_else_jump;
+        BasicBlock* ir_jump_from;
+        Node* ast_true_jump;
+        Node* ast_false_jump;
         Node* ast_parent_node;
+        BasicBlock* ir_true_block;
+        BasicBlock* ir_false_block;
         BasicBlock* ir_parent;
-        BasicBlock* true_block;
-        BasicBlock* false_block;
         bool done;
     };
 
@@ -585,7 +586,7 @@ namespace LLVM
     {
         Buffer<InstructionInfo> instructions;
         BasicBlock* parent;
-        ScopeBlock* ast_block;
+        Node* ast_block;
     };
 
     struct Function
@@ -685,9 +686,14 @@ namespace LLVM
             current_symbol_buffer->append(symbol);
         }
 
-        BasicBlock* append_basic_block(Allocator* allocator, ScopeBlock* ast_scope_block = nullptr)
+        BasicBlock* append_basic_block(Allocator* allocator, Node* ast_scope_block = nullptr)
         {
-            current_fn->basic_block_labels.append(current_fn->next_index++);
+            auto label_index = current_fn->next_index++;
+            if (label_index == 13)
+            {
+                int k = 123213;
+            }
+            current_fn->basic_block_labels.append(label_index);
             auto* new_one = current_fn->basic_blocks.allocate();
             new_one->parent = current;
             current = new_one;
@@ -774,9 +780,9 @@ namespace LLVM
         }
     };
 
-    bool introspect_for_conditional_allocas(ScopeBlock* block)
+    bool introspect_for_conditional_allocas(Node* scope)
     {
-        for (auto* st_node : block->statements)
+        for (auto* st_node : scope->block.statements)
         {
             if (st_node->type == NodeType::Ret)
             {
@@ -971,6 +977,30 @@ namespace LLVM
 
                         return result;
                     } break;
+                    case BinOp::Cmp_GreaterThan:
+                    {
+                        InstructionInfo icmp_instruction = {
+                            .id = Instruction::ICmp,
+                            .icmp = {
+                                .id = ICmp::ID::SignedGreaterThan, // @TODO: remove signed value and compute based on the operands
+                                // @TODO: remove hardcoded value
+                                .type = &type_declarations[static_cast<u32>(NativeTypeID::S32)],
+                                .left = left_symbol,
+                                .right = right_symbol,
+                                .index = ir_builder.current_fn->next_index++,
+                            },
+                        };
+
+                        ir_builder.append(icmp_instruction);
+
+                        Symbol result = {
+                            .type = Symbol::ID::Index,
+                            .result = {.index = icmp_instruction.icmp.index},
+                        };
+                        ir_builder.append(result);
+
+                        return result;
+                    }
                     default:
                         RNS_NOT_IMPLEMENTED;
                         break;
@@ -983,9 +1013,9 @@ namespace LLVM
         return {};
     }
 
-    void work_block(Allocator* allocator, IRBuilder& ir_builder, TypeBuffer& type_declarations, FunctionDeclaration& ast_current_function, ScopeBlock* scope_block, BasicBlock* block_to_work, bool go_back_to_parent_scope = true)
+    void work_block(Allocator* allocator, IRBuilder& ir_builder, TypeBuffer& type_declarations, FunctionDeclaration& ast_current_function, Node* ast_scope, BasicBlock* block_to_work, bool go_back_to_parent_scope = true)
     {
-        for (auto* st_node : scope_block->statements)
+        for (auto* st_node : ast_scope->block.statements)
         {
             switch (st_node->type)
             {
@@ -996,12 +1026,12 @@ namespace LLVM
 
                     while (scope_to_jump_to)
                     {
-                        if (scope_to_jump_to->type == ScopeType::LoopBody)
+                        if (scope_to_jump_to->block.type == Block::Type::LoopBody)
                         {
                             break;
                         }
 
-                        scope_to_jump_to = static_cast<ScopeBlock*>(scope_to_jump_to->parent);
+                        scope_to_jump_to = scope_to_jump_to->block.parent;
                     }
 
                     assert(scope_to_jump_to);
@@ -1010,9 +1040,9 @@ namespace LLVM
                     PatchBlock patch = {
                         .type = JumpType::Direct,
                         .keyword = HighLevelType::Break,
-                        .ir_block = ir_builder.current,
+                        .ir_jump_from = ir_builder.current,
                         .ast_true_jump = scope_to_jump_to,
-                        .ast_else_jump = nullptr,
+                        .ast_false_jump = nullptr,
                         .ast_parent_node = nullptr,
                         .ir_parent = block_to_work,
                     };
@@ -1042,15 +1072,15 @@ namespace LLVM
                     auto* ret_expr = st_node->ret.expr;
                     auto* fn_type = ast_current_function.type;
                     assert(fn_type);
-                    auto* ret_type = fn_type->ret_type;
+                    auto* ret_type = fn_type->function_type.ret_type;
                     assert(ret_type);
                     InstructionInfo instruction;
                     instruction.id = Instruction::Ret;
                     if (ret_expr)
                     {
-                        auto symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, ast_current_function, ret_expr, fn_type->ret_type);
+                        auto symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, ast_current_function, ret_expr, fn_type->function_type.ret_type);
                         instruction.ret = {
-                            .type = ast_current_function.type->ret_type,
+                            .type = ast_current_function.type->function_type.ret_type,
                             .symbol = symbol,
                         };
                         ir_builder.append(instruction);
@@ -1062,7 +1092,7 @@ namespace LLVM
                 }
                 else
                 {
-                    auto* ret_type = ast_current_function.type->ret_type;
+                    auto* ret_type = ast_current_function.type->function_type.ret_type;
                     assert(ret_type);
 
                     if (ret_type->id != TypeID::VoidType)
@@ -1100,17 +1130,24 @@ namespace LLVM
 
                 auto* ast_if_block = st_node->conditional.if_block;
                 assert(ast_if_block);
-                assert(ast_if_block->type == ScopeType::ConditionalBlock);
+                assert(ast_if_block->block.type == Block::Type::ConditionalBlock);
                 auto* if_basic_block = ir_builder.append_basic_block(allocator, ast_if_block);
                 work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_if_block, if_basic_block);
 
                 auto* ast_else_block = st_node->conditional.else_block;
                 assert(ast_else_block);
-                assert(ast_else_block->type == ScopeType::ConditionalBlock);
+                assert(ast_else_block->block.type == Block::Type::ConditionalBlock);
 
                 auto* else_basic_block = ir_builder.append_basic_block(allocator, ast_else_block);
                 bool go_back_to_parent_block = st_node->conditional.fake_else ? false : true;
-                work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_else_block, else_basic_block, go_back_to_parent_block);
+                if (st_node->conditional.fake_else && ast_else_block->block.statements.len == 0)
+                {
+                    //RNS_NOT_IMPLEMENTED;
+                }
+                else
+                {
+                    work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_else_block, else_basic_block, go_back_to_parent_block);
+                }
                 ir_builder.append_conditional_branch(condition_symbol, current_scope, if_basic_block, else_basic_block, type_declarations);
             } break;
             case NodeType::Loop:
@@ -1125,8 +1162,8 @@ namespace LLVM
                 ir_builder.append_branch(loop_parent_basic_block, loop_prefix_basic_block);
 
                 // @Info: this is supposed to be the loop condition. @TODO: come up with a better name
-                assert(ast_loop_prefix->statements.len == 1);
-                auto* loop_condition = ast_loop_prefix->statements[0];
+                assert(ast_loop_prefix->block.statements.len == 1);
+                auto* loop_condition = ast_loop_prefix->block.statements[0];
 
                 Symbol cmp_result = node_to_bytecode_value(allocator, ir_builder, type_declarations, ast_current_function, loop_condition, &type_declarations[(u32)NativeTypeID::U1]);
 
@@ -1157,11 +1194,11 @@ namespace LLVM
                         {
                             assert(patch.type == JumpType::Direct);
                             assert(patch.keyword == HighLevelType::Break);
-                            patch.true_block = loop_end_basic_block;
-                            ir_builder.append_branch(patch.ir_block, patch.true_block);
+                            patch.ir_true_block = loop_end_basic_block;
+                            ir_builder.append_branch(patch.ir_jump_from, patch.ir_true_block);
                             patch.done = true;
                         }
-                        else if (patch.ast_else_jump == ast_loop_body)
+                        else if (patch.ast_false_jump == ast_loop_body)
                         {
                             RNS_NOT_IMPLEMENTED;
                         }
@@ -1202,7 +1239,7 @@ namespace LLVM
             };
 
             auto arg_count = 0;
-            for (auto* var_node : ast_current_function.variables)
+            for (auto* var_node : ast_current_function->function.variables)
             {
                 if (var_node->var_decl.is_fn_arg)
                 {
@@ -1212,9 +1249,10 @@ namespace LLVM
                 break;
             }
 
-            auto& main_scope_statements = ast_current_function.scope_blocks[0].statements;
+            auto* main_scope = ast_current_function->function.scope_blocks[0];
+            auto& main_scope_statements = main_scope->block.statements;
 
-            bool conditional_alloca = ast_current_function.type->ret_type->id != TypeID::VoidType;
+            bool conditional_alloca = ast_current_function->function.type->function_type.ret_type->id != TypeID::VoidType;
             if (conditional_alloca)
             {
                 conditional_alloca = false;
@@ -1250,7 +1288,7 @@ namespace LLVM
             llvm_function.next_index = llvm_function.arg_count + 1;
             llvm_function.conditional_alloca = conditional_alloca;
 
-            auto alloca_count = ast_current_function.variables.len + conditional_alloca;
+            auto alloca_count = ast_current_function->function.variables.len + conditional_alloca;
             Buffer<InstructionInfo*> alloca_buffer = {};
             if (alloca_count > 0)
             {
@@ -1272,7 +1310,7 @@ namespace LLVM
                 if (conditional_alloca)
                 {
                     Alloca conditional_alloca_instruction = {
-                        .type = ast_current_function.type->ret_type,
+                        .type = ast_current_function->function.type->function_type.ret_type,
                         .index = ir_builder.current_fn->next_index++,
                         .count = 1,
                         .alignment = 4,
@@ -1284,7 +1322,7 @@ namespace LLVM
                     ir_builder.current_alloca_buffer->append(conditional_alloca_instruction_ptr);
                 }
 
-                for (auto* var_node : ast_current_function.variables)
+                for (auto* var_node : ast_current_function->function.variables)
                 {
                     assert(var_node->type == NodeType::VarDecl);
 
@@ -1292,16 +1330,14 @@ namespace LLVM
                 }
             }
 
-            work_block(&llvm_allocator, ir_builder, type_declarations, ast_current_function, &ast_current_function.scope_blocks[0], &ir_builder.current_fn->entry_block);
+            work_block(&llvm_allocator, ir_builder, type_declarations, ast_current_function->function, ast_current_function->function.scope_blocks[0], &ir_builder.current_fn->entry_block);
 
-#if 0
             ir_builder.print_block(&ir_builder.current_fn->entry_block);
 
             for (auto& basic_block : ir_builder.current_fn->basic_blocks)
             {
                 ir_builder.print_block(&basic_block);
             }
-#endif
         }
     }
 }

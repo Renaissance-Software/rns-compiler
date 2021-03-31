@@ -90,7 +90,7 @@ bool compiler_workflow(RNS::String file)
     return true;
 }
 
-#include "test_files.inc"
+#include "test_files.h"
 
 s32 rns_main(s32 argc, char* argv[])
 {
@@ -115,17 +115,21 @@ s32 rns_main(s32 argc, char* argv[])
         }
     }
 #endif
-    RNS::String working_test_case = NEW_TEST(
+    RNS::String working_test_case =
+        NEW_TEST(
     main :: () -> s32
     {
         sum: s32 = 0;
         for i : 4
         {
-            if i == 2
+            if i > 1
             {
-                break;
+                if i == 2
+                {
+                    break;
+                }
             }
-            
+
             sum = sum + i;
         }
 

@@ -411,8 +411,11 @@ namespace AST
         VarDecl,
         VarExpr,
         Conditional,
+        Block,
         Loop,
         Break,
+        Function,
+        FunctionType,
     };
 
     struct BinaryOp
@@ -433,23 +436,22 @@ namespace AST
         Node* mentioned;
     };
 
-    enum class ScopeType
-    {
-        None,
-        LoopPrefix,
-        LoopBody,
-        LoopPostfix,
-        ConditionalBlock,
-        Function,
-    };
 
     using NodeRefBuffer = RNS::Buffer<Node*>;
-    struct ScopeBlock
+    struct Block
     {
+        enum class Type
+        {
+            None,
+            LoopPrefix,
+            LoopBody,
+            LoopPostfix,
+            ConditionalBlock,
+            Function,
+        };
         NodeRefBuffer statements;
-        ScopeBlock* parent;
-        Node* origin;
-        ScopeType type;
+        Node* parent;
+        Type type;
     };
 
     struct VarDecl
@@ -458,37 +460,36 @@ namespace AST
         // @TODO: should consider fully integrating the type in here
         Type* type;
         Node* value;
-        ScopeBlock* scope;
+        Node* scope;
         bool is_fn_arg;
     };
 
     struct Conditional
     {
         Node* condition;
-        ScopeBlock* if_block;
-        ScopeBlock* else_block;
+        Node* if_block;
+        Node* else_block;
         bool fake_else;
     };
 
     struct Loop
     {
-        ScopeBlock* prefix;
-        ScopeBlock* body;
-        ScopeBlock* postfix;
+        Node* prefix;
+        Node* body;
+        Node* postfix;
     };
 
     struct Break
     {
-        ScopeBlock* block;
+        Node* block;
         Node* origin;
     };
 
     struct FunctionDeclaration
     {
-        // @TODO: consider: right now normal functions use anonymous function types
-        RNS::Buffer<ScopeBlock> scope_blocks;
+        NodeRefBuffer scope_blocks;
         NodeRefBuffer variables;
-        FunctionType* type;
+        Node* type;
     };
 
     struct Node
@@ -501,10 +502,15 @@ namespace AST
             RetExpr ret;
             VarDecl var_decl;
             VarExpr var_expr;
-            ScopeBlock scope;
+            Block block;
             Conditional conditional;
             Loop loop;
             Break break_;
+            FunctionDeclaration function;
+            StructType struct_decl;
+            UnionType union_decl;
+            EnumType enum_decl;
+            FunctionType function_type;
         };
     };
 
@@ -520,11 +526,11 @@ namespace AST
         }
     };
 
-    using FunctionDeclarationBuffer = RNS::Buffer<FunctionDeclaration>;
-    using StructBuffer = RNS::Buffer<StructType>;
-    using UnionBuffer = RNS::Buffer<UnionType>;
-    using EnumBuffer = RNS::Buffer<EnumType>;
-    using FunctionTypeBuffer = RNS::Buffer<FunctionType>;
+    using FunctionDeclarationBuffer = NodeRefBuffer;
+    using StructBuffer = NodeRefBuffer;
+    using UnionBuffer = NodeRefBuffer;
+    using EnumBuffer = NodeRefBuffer;
+    using FunctionTypeBuffer = NodeRefBuffer;
 
     struct Result
     {
