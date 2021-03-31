@@ -492,6 +492,7 @@ namespace AST
 
     struct Node
     {
+        Node* parent;
         NodeType type;
         union
         {
@@ -510,7 +511,6 @@ namespace AST
             EnumType enum_decl;
             FunctionType function_type;
         };
-        Node* parent;
     };
 
     // @TODO: we are transforming this to inherit from the RNS-lib buffer. This may have some drawbacks. Come back to this when the compiler is more mature.

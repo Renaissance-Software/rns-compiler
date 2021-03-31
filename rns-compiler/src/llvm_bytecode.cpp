@@ -350,6 +350,7 @@ namespace LLVM
     enum class HighLevelType
     {
         Break,
+        NoElse,
     };
 
     struct BasicBlock;
@@ -606,6 +607,7 @@ namespace LLVM
         BasicBlock* current;
         Function* current_fn;
         Buffer<InstructionInfo*>* current_alloca_buffer;
+        // @TODO: Consider using another kind of data structure to speed up compilation
         Buffer<PatchBlock>* current_patch_list;
         Buffer<Symbol>* current_symbol_buffer;
 
@@ -1156,10 +1158,54 @@ namespace LLVM
                 }
                 else
                 {
-                    // generate some kind of patch here
-                    //PatchBlock patch = {
-                    //    .ast_true_jump = st_node->conditional.pa
-                    //}
+                    bool do_patch = true;
+                    for (auto& patch : *ir_builder.current_patch_list)
+                    {
+                        if (patch.ast_true_jump == st_node)
+                        {
+                            do_patch = false;
+                            break;
+                        }
+                    }
+
+                    if (do_patch)
+                    {
+                        // generate some kind of patch here
+                        PatchBlock no_else_patch = {
+                            .type = JumpType::Direct,
+                            .keyword = HighLevelType::NoElse,
+                            .ir_jump_from = next_basic_block,
+                            .ast_true_jump = st_node->parent,
+                            .ast_parent_node = st_node->parent,
+                            .ir_parent = next_basic_block->parent,
+                        };
+                        ir_builder.current_patch_list->append(no_else_patch);
+                    }
+                }
+                for (auto& patch : *ir_builder.current_patch_list)
+                {
+                    if (!patch.done)
+                    {
+                        assert(patch.type == JumpType::Direct);
+                        if (patch.ast_true_jump == st_node)
+                        {
+                            if (ast_else_block)
+                            {
+                                patch.ir_true_block = next_basic_block;
+                                ir_builder.append_branch(patch.ir_jump_from, patch.ir_true_block);
+                                patch.done = true;
+                            }
+                            else
+                            {
+                                assert(patch.ast_true_jump->parent);
+                                patch.ast_true_jump = patch.ast_true_jump->parent;
+                            }
+                        }
+                        else if (patch.ast_false_jump == st_node)
+                        {
+                            RNS_NOT_IMPLEMENTED;
+                        }
+                    }
                 }
                 ir_builder.append_conditional_branch(condition_symbol, current_scope, if_basic_block, next_basic_block, type_declarations);
             } break;
@@ -1206,10 +1252,24 @@ namespace LLVM
                         if (patch.ast_true_jump == ast_loop_body)
                         {
                             assert(patch.type == JumpType::Direct);
-                            assert(patch.keyword == HighLevelType::Break);
-                            patch.ir_true_block = loop_end_basic_block;
-                            ir_builder.append_branch(patch.ir_jump_from, patch.ir_true_block);
-                            patch.done = true;
+                            switch (patch.keyword)
+                            {
+                                case HighLevelType::Break:
+                                {
+                                    patch.ir_true_block = loop_end_basic_block;
+                                    ir_builder.append_branch(patch.ir_jump_from, patch.ir_true_block);
+                                    patch.done = true;
+                                } break;
+                                case HighLevelType::NoElse:
+                                {
+                                    patch.ir_true_block = body_current_scope;
+                                    ir_builder.append_branch(patch.ir_jump_from, patch.ir_true_block);
+                                    patch.done = true;
+                                } break;
+                                default:
+                                    RNS_NOT_IMPLEMENTED;
+                                    break;
+                            }
                         }
                         else if (patch.ast_false_jump == ast_loop_body)
                         {
