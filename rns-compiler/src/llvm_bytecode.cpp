@@ -1187,13 +1187,13 @@ namespace LLVM
                 work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_loop_body, loop_body_basic_block);
                 auto* body_current_scope = ir_builder.current;
                 
-                ir_builder.current = loop_parent_basic_block;
+                ir_builder.change_block(loop_parent_basic_block);
                 auto* loop_postfix_basic_block = ir_builder.append_basic_block(allocator, ast_loop_postfix);
                 work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_loop_postfix, loop_postfix_basic_block);
 
-                ir_builder.current = loop_parent_basic_block;
+                ir_builder.change_block(loop_parent_basic_block);
                 auto* loop_end_basic_block = ir_builder.append_basic_block(allocator);
-                ir_builder.current = loop_parent_basic_block;
+                ir_builder.change_block(loop_parent_basic_block);
 
                 // @TODO: make conditional branch
                 ir_builder.append_conditional_branch(cmp_result, loop_prefix_basic_block, loop_body_basic_block, loop_end_basic_block, type_declarations);
@@ -1223,7 +1223,7 @@ namespace LLVM
                     }
                 }
 
-                ir_builder.current = loop_end_basic_block;
+                ir_builder.change_block(loop_end_basic_block);
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
@@ -1310,7 +1310,7 @@ namespace LLVM
             ir_builder.current_fn = &llvm_function;
             // @TODO: abstract this away
             {
-                ir_builder.current = &ir_builder.current_fn->entry_block;
+                ir_builder.change_block(&ir_builder.current_fn->entry_block);
                 ir_builder.current->instructions = ir_builder.current->instructions.create(&llvm_allocator, 1024);
                 ir_builder.current_alloca_buffer = &alloca_buffer;
                 ir_builder.current_symbol_buffer = &symbol_buffer;
