@@ -469,7 +469,6 @@ namespace AST
         Node* condition;
         Node* if_block;
         Node* else_block;
-        bool fake_else;
     };
 
     struct Loop

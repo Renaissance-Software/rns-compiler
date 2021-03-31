@@ -759,6 +759,14 @@ namespace LLVM
             current = original_scope;
         }
 
+        BasicBlock* change_block(BasicBlock* block)
+        {
+            assert(block != current);
+            auto* current_block = current;
+            current = block;
+            return current_block;
+        }
+
         void print_block(BasicBlock* basic_block)
         {
 #if 1
@@ -782,6 +790,11 @@ namespace LLVM
 
     bool introspect_for_conditional_allocas(Node* scope)
     {
+        if (!scope)
+        {
+            return false;
+        }
+
         for (auto* st_node : scope->block.statements)
         {
             if (st_node->type == NodeType::Ret)
@@ -1013,7 +1026,7 @@ namespace LLVM
         return {};
     }
 
-    void work_block(Allocator* allocator, IRBuilder& ir_builder, TypeBuffer& type_declarations, FunctionDeclaration& ast_current_function, Node* ast_scope, BasicBlock* block_to_work, bool go_back_to_parent_scope = true)
+    void work_block(Allocator* allocator, IRBuilder& ir_builder, TypeBuffer& type_declarations, FunctionDeclaration& ast_current_function, Node* ast_scope, BasicBlock* block_to_work)
     {
         for (auto* st_node : ast_scope->block.statements)
         {
@@ -1135,20 +1148,21 @@ namespace LLVM
                 work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_if_block, if_basic_block);
 
                 auto* ast_else_block = st_node->conditional.else_block;
-                assert(ast_else_block);
-                assert(ast_else_block->block.type == Block::Type::ConditionalBlock);
-
-                auto* else_basic_block = ir_builder.append_basic_block(allocator, ast_else_block);
-                bool go_back_to_parent_block = st_node->conditional.fake_else ? false : true;
-                if (st_node->conditional.fake_else && ast_else_block->block.statements.len == 0)
+                if (ast_else_block)
                 {
-                    //RNS_NOT_IMPLEMENTED;
+                    assert(ast_else_block);
+                    assert(ast_else_block->block.type == Block::Type::ConditionalBlock);
+
+                    auto* else_basic_block = ir_builder.append_basic_block(allocator, ast_else_block);
+                    work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_else_block, else_basic_block);
+                    ir_builder.append_conditional_branch(condition_symbol, current_scope, if_basic_block, else_basic_block, type_declarations);
                 }
                 else
                 {
-                    work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_else_block, else_basic_block, go_back_to_parent_block);
+                    auto* if_end_basic_block = ir_builder.append_basic_block(allocator);
+                    ir_builder.append_conditional_branch(condition_symbol, current_scope, if_basic_block, if_end_basic_block, type_declarations);
                 }
-                ir_builder.append_conditional_branch(condition_symbol, current_scope, if_basic_block, else_basic_block, type_declarations);
+
             } break;
             case NodeType::Loop:
             {
@@ -1170,7 +1184,7 @@ namespace LLVM
                 bool returned = false;
                 bool jumps_to_patch = false;
                 auto* loop_body_basic_block = ir_builder.append_basic_block(allocator, ast_loop_body);
-                work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_loop_body, loop_body_basic_block, false);
+                work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_loop_body, loop_body_basic_block);
                 auto* body_current_scope = ir_builder.current;
                 
                 ir_builder.current = loop_parent_basic_block;
@@ -1215,11 +1229,6 @@ namespace LLVM
                 RNS_NOT_IMPLEMENTED;
                 break;
             }
-        }
-
-        if (go_back_to_parent_scope)
-        {
-            ir_builder.current = ir_builder.current->parent;
         }
     }
 

@@ -119,7 +119,7 @@ s32 rns_main(s32 argc, char* argv[])
         NEW_TEST(
     main :: () -> s32
     {
-        sum: s32 = 0;
+    sum: s32 = 0;
         for i : 4
         {
             if i > 1

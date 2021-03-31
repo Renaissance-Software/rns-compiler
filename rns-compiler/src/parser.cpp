@@ -22,8 +22,8 @@ namespace AST
         UnionBuffer union_declarations;
         EnumBuffer enum_declarations;
         FunctionTypeBuffer function_type_declarations;
-        TypeBuffer& type_declarations;
 
+        TypeBuffer& type_declarations;
         Node* current_scope;
         Node* current_function;
 
@@ -362,6 +362,7 @@ namespace AST
                 }
                 current_scope = current_scope->block.parent;
             }
+#if 0
             else
             {
                 node->conditional.fake_else = true;
@@ -372,6 +373,8 @@ namespace AST
                 fake_else_block->block.type = Block::Type::ConditionalBlock;
                 current_scope = fake_else_block;
             }
+#endif
+
 
             return node;
         }
@@ -687,11 +690,6 @@ namespace AST
                         return;
                     }
                     scope_block->block.statements.append(statement);
-                    if (statement->type == NodeType::Conditional && statement->conditional.fake_else)
-                    {
-                        scope_block = statement->conditional.else_block;
-                        scope_block->block.statements = scope_block->block.statements.create(&allocator, 64);
-                    }
                     statement_left_to_parse = (next_token = get_next_token())->id != expected_end;
                 }
 
