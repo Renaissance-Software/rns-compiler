@@ -354,6 +354,7 @@ namespace LLVM
     };
 
     struct BasicBlock;
+    struct IRBuilder;
 
     struct PatchBlock
     {
@@ -390,7 +391,7 @@ namespace LLVM
         {
             if (block_label.type == Symbol::ID::EntryBlockLabel)
             {
-                printf("fn_entry:\t");
+                printf("f:\t");
             }
             else
             {
@@ -585,6 +586,7 @@ namespace LLVM
 
     struct BasicBlock
     {
+        Symbol label;
         Buffer<InstructionInfo> instructions;
         BasicBlock* parent;
         Node* ast_block;
@@ -593,7 +595,6 @@ namespace LLVM
     struct Function
     {
         BasicBlock entry_block;
-        Buffer<LLVMID> basic_block_labels;
         Buffer<BasicBlock> basic_blocks;
         LLVMID next_index;
         u32 arg_count;
@@ -695,46 +696,28 @@ namespace LLVM
             {
                 int k = 123213;
             }
-            current_fn->basic_block_labels.append(label_index);
             auto* new_one = current_fn->basic_blocks.allocate();
             new_one->parent = current;
             current = new_one;
+            current->label = {
+                .type = Symbol::ID::Label,
+                .result = {.index = label_index }
+            };
             current->instructions = current->instructions.create(allocator, 64);
             current->ast_block = ast_scope_block;
 
             return new_one;
         }
 
-        Symbol get_block_label(BasicBlock* basic_block)
-        {
-            if (basic_block == &this->current_fn->entry_block)
-            {
-                Symbol block_label = { .type = Symbol::ID::EntryBlockLabel };
-                return block_label;
-            }
-            else
-            {
-                auto index = current_fn->basic_blocks.get_id(basic_block);
-                auto label_index = current_fn->basic_block_labels[index];
-
-                Symbol block_label = {
-                    .type = Symbol::ID::Label,
-                    .result = {.index = label_index }
-                };
-                return block_label;
-            }
-        }
-
         void append_branch(BasicBlock* origin, BasicBlock* destination)
         {
             auto* original_scope = current;
-
             current = origin;
-            auto dest_label = get_block_label(destination);
+
             InstructionInfo br_instruction = {
                 .id = Instruction::Br,
                 .br = {
-                    .if_label = dest_label,
+                    .if_label = destination->label,
                 },
             };
             append(br_instruction);
@@ -746,15 +729,13 @@ namespace LLVM
             auto* original_scope = current;
 
             current = origin_block;
-            auto if_label = get_block_label(if_block);
-            auto else_label = get_block_label(else_block);
             InstructionInfo br_instruction = {
                 .id = Instruction::Br,
                 .br = {
                     .type = &type_declarations[(u32)NativeTypeID::U1],
                     .condition = condition,
-                    .if_label = if_label,
-                    .else_label = else_label,
+                    .if_label = if_block->label,
+                    .else_label = else_block->label,
                 },
             };
             append(br_instruction);
@@ -769,22 +750,59 @@ namespace LLVM
             return current_block;
         }
 
-        void print_block(BasicBlock* basic_block)
+        void print_patch(PatchBlock& patch)
         {
-#if 1
-            if (basic_block == &this->current_fn->entry_block)
+            printf("jump patch:\n");
+            printf("\ttype: ");
+            switch (patch.type)
             {
-                printf("fn_entry:\n");
+                case JumpType::Direct:
+                {
+                    printf("direct\n");
+                } break;
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+            printf("\tkeyword: ");
+            switch (patch.keyword)
+            {
+                case HighLevelType::Break:
+                {
+                    printf("break\n");
+                } break;
+                case HighLevelType::NoElse:
+                {
+                    printf("noelse\n");
+                } break;
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+            printf("\tcondition: %%%u\n", patch.condition.result.index);
+            if (patch.ir_true_block)
+            {
+                printf("\tfrom block %u, to block %u\n", patch.ir_jump_from->label.result.index, patch.ir_true_block->label.result.index);
             }
             else
             {
-                auto block_label = get_block_label(basic_block);
-                printf("%u:\n", block_label.result.index);
+                printf("\tfrom block %u, to block %u\n", patch.ir_jump_from->label.result.index, 0);
             }
+        }
 
+        void add_patch(PatchBlock& patch)
+        {
+            printf("Adding to the list ");
+            print_patch(patch);
+            current_patch_list->append(patch);
+        }
+
+        void print_block(BasicBlock* basic_block)
+        {
+#if 1
             for (auto& instr : basic_block->instructions)
             {
-                instr.print(get_block_label(basic_block));
+                instr.print(basic_block->label);
             }
 #endif
         }
@@ -1057,11 +1075,9 @@ namespace LLVM
                         .keyword = HighLevelType::Break,
                         .ir_jump_from = ir_builder.current,
                         .ast_true_jump = scope_to_jump_to,
-                        .ast_false_jump = nullptr,
-                        .ast_parent_node = nullptr,
                         .ir_parent = block_to_work,
                     };
-                    ir_builder.current_patch_list->append(patch);
+                    ir_builder.add_patch(patch);
                 } break;
                 case NodeType::BinOp:
                 {
@@ -1087,13 +1103,21 @@ namespace LLVM
                     auto* ret_expr = st_node->ret.expr;
                     auto* fn_type = ast_current_function.type;
                     assert(fn_type);
-                    auto* ret_type = fn_type->function_type.ret_type;
-                    assert(ret_type);
+                    auto* function_return_type = fn_type->function_type.ret_type;
+                    assert(function_return_type);
                     InstructionInfo instruction;
                     instruction.id = Instruction::Ret;
                     if (ret_expr)
                     {
-                        auto symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, ast_current_function, ret_expr, fn_type->function_type.ret_type);
+                        if (ret_expr->type == NodeType::VarExpr)
+                        {
+                            auto* var_decl = ret_expr->var_expr.mentioned;
+                            assert(var_decl);
+                            assert(var_decl->type == NodeType::VarDecl);
+                            auto* return_expression_type = var_decl->var_decl.type;
+                            assert(return_expression_type == function_return_type);
+                        }
+                        auto symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, ast_current_function, ret_expr, function_return_type);
                         instruction.ret = {
                             .type = ast_current_function.type->function_type.ret_type,
                             .symbol = symbol,
@@ -1102,7 +1126,7 @@ namespace LLVM
                     }
                     else
                     {
-                        assert(ret_type->id == TypeID::VoidType);
+                        assert(function_return_type->id == TypeID::VoidType);
                     }
                 }
                 else
@@ -1179,7 +1203,7 @@ namespace LLVM
                             .ast_parent_node = st_node->parent,
                             .ir_parent = next_basic_block->parent,
                         };
-                        ir_builder.current_patch_list->append(no_else_patch);
+                        ir_builder.add_patch(no_else_patch);
                     }
                 }
                 for (auto& patch : *ir_builder.current_patch_list)
@@ -1275,10 +1299,13 @@ namespace LLVM
                         {
                             RNS_NOT_IMPLEMENTED;
                         }
+                        // @TODO: watch out, this may be dangerous
+#if 0
                         else
                         {
                             RNS_NOT_IMPLEMENTED;
                         }
+#endif
                     }
                 }
 
@@ -1302,7 +1329,6 @@ namespace LLVM
         for (auto& ast_current_function : function_declarations)
         {
             Function llvm_function = {
-                .basic_block_labels = Buffer<LLVMID>::create(&llvm_allocator, 64),
                 .basic_blocks = Buffer<BasicBlock>::create(&llvm_allocator, 64),
             };
 
@@ -1370,6 +1396,7 @@ namespace LLVM
             // @TODO: abstract this away
             {
                 ir_builder.change_block(&ir_builder.current_fn->entry_block);
+                ir_builder.current->label.type = Symbol::ID::EntryBlockLabel;
                 ir_builder.current->instructions = ir_builder.current->instructions.create(&llvm_allocator, 1024);
                 ir_builder.current_alloca_buffer = &alloca_buffer;
                 ir_builder.current_symbol_buffer = &symbol_buffer;

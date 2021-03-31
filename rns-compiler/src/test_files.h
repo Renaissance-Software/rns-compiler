@@ -36,4 +36,24 @@ const RNS::String test_files[] = {
         return sum;
     }
     ),
+    NEW_TEST(
+    main :: () -> s32
+    {
+    sum: s32 = 0;
+        for i : 4
+        {
+            if i > 1
+            {
+                if i == 2
+                {
+                    break;
+                }
+            }
+
+            sum = sum + i;
+        }
+
+        return sum;
+    }
+    ),
 };

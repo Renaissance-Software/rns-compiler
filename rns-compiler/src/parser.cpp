@@ -386,6 +386,7 @@ namespace AST
             for_loop->loop.postfix = create_loop_block(Block::Type::LoopBody);
 
             auto* it_symbol = expect_and_consume(TokenID::Symbol);
+            assert(it_symbol);
             Node* it_decl = nb.append(NodeType::VarDecl, for_loop);
             it_decl->var_decl.is_fn_arg = false;
             it_decl->var_decl.name = RNS::String{ it_symbol->symbol, it_symbol->offset };

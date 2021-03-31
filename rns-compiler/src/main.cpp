@@ -116,24 +116,49 @@ s32 rns_main(s32 argc, char* argv[])
     }
 #endif
     RNS::String working_test_case =
-        NEW_TEST(
-    main :: () -> s32
+        NEW_TEST(main :: () -> s32
     {
     sum: s32 = 0;
-        for i : 4
+    for i : 4
+    {
+        if i > 1
         {
-            if i > 1
+            if i == 2
             {
-                if i == 2
-                {
-                    break;
-                }
+                sum = sum * sum;
+                break;
             }
-
-            sum = sum + i;
+            sum = sum + 1;
         }
-
-        return sum;
+        else
+        {
+            sum = sum + 12;
+            if i == 3
+            {
+                sum = sum + 1231;
+                if sum == 1231
+                {
+                    for j : 10
+                    {
+                        sum = sum + j;
+                    }
+                }
+                sum = sum + sum;
+            }
+            else if i == sum
+            {
+                sum = sum - 100;
+            }
+            else
+            {
+                sum = sum - 3;
+                break;
+            }
+            sum = sum + 2;
+        }
+        sum = sum + i;
+    }
+    return sum;
     }
     );
 

@@ -184,7 +184,7 @@ LexerResult lex(Compiler& compiler, TypeBuffer& type_declarations, RNS::String f
     Allocator name_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(100));
 
     s64 tokens_to_allocate = 64 + ((s64)file_content.len / 2);
-    s64 chars_to_allocate_in_string_buffer = 64 + (tokens_to_allocate / 5);
+    s64 chars_to_allocate_in_string_buffer = 64 + tokens_to_allocate;
     TokenBuffer token_buffer = {
         .ptr = new(&token_allocator) Token[tokens_to_allocate],
         .len = 0,
