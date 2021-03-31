@@ -21,4 +21,7 @@
     <ClInclude Include="src\llvm_bytecode.h" />
     <ClInclude Include="src\typechecker.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="src\test_files.inc" />
+  </ItemGroup>
 </Project>

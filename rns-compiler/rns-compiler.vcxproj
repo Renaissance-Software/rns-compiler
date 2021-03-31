@@ -39,6 +39,9 @@
     <ClInclude Include="src\x86_64.h" />
     <ClInclude Include="src\x86_64_encoding.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="src\test_files.inc" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>

@@ -289,6 +289,7 @@ namespace AST
             auto* if_block = node->conditional.if_block;
             if_block->parent = current_scope;
             if_block->type = ScopeType::ConditionalBlock;
+            if_block->origin = node;
             current_scope = if_block;
 
             if (braces)
@@ -296,7 +297,7 @@ namespace AST
                 if_block->statements = if_block->statements.create(&allocator, 128);
                 while (!expect_and_consume('}'))
                 {
-                    auto* st_node = parse_statement();
+                    auto* st_node = parse_statement(node);
                     assert(st_node);
                     if_block->statements.append(st_node);
                 }
@@ -304,7 +305,7 @@ namespace AST
             else
             {
                 if_block->statements = if_block->statements.create(&allocator, 1);
-                auto* st_node = parse_statement();
+                auto* st_node = parse_statement(node);
                 if_block->statements.append(st_node);
             }
 
@@ -316,6 +317,7 @@ namespace AST
                 auto* else_block = node->conditional.else_block;
                 else_block->parent = current_scope;
                 else_block->type = ScopeType::ConditionalBlock;
+                else_block->origin = node;
                 current_scope = else_block;
 
                 braces = expect_and_consume('{');
@@ -324,7 +326,7 @@ namespace AST
                     else_block->statements = else_block->statements.create(&allocator, 128);
                     while (!expect_and_consume('}'))
                     {
-                        auto* st_node = parse_statement();
+                        auto* st_node = parse_statement(node);
                         assert(st_node);
                         else_block->statements.append(st_node);
                     }
@@ -332,11 +334,20 @@ namespace AST
                 else
                 {
                     else_block->statements = else_block->statements.create(&allocator, 1);
-                    auto* st_node = parse_statement();
+                    auto* st_node = parse_statement(node);
                     assert(st_node);
                     else_block->statements.append(st_node);
                 }
                 current_scope = static_cast<ScopeBlock*>(current_scope->parent);
+            }
+            else
+            {
+                node->conditional.fake_else = true;
+                node->conditional.else_block = current_function->scope_blocks.allocate();
+                auto* fake_else_block = node->conditional.else_block;
+                fake_else_block->type = ScopeType::ConditionalBlock;
+                fake_else_block->parent = current_scope;
+                current_scope = fake_else_block;
             }
 
             return node;
@@ -350,12 +361,15 @@ namespace AST
             for_loop->loop.prefix = this->current_function->scope_blocks.allocate();
             for_loop->loop.prefix->type = ScopeType::LoopPrefix;
             for_loop->loop.prefix->parent = parent_scope;
+            for_loop->loop.prefix->origin = for_loop;
             for_loop->loop.body = this->current_function->scope_blocks.allocate();
             for_loop->loop.body->type = ScopeType::LoopBody;
             for_loop->loop.body->parent = parent_scope;
+            for_loop->loop.body->origin = for_loop;
             for_loop->loop.postfix = this->current_function->scope_blocks.allocate();
             for_loop->loop.postfix->type = ScopeType::LoopPostfix;
             for_loop->loop.postfix->parent = parent_scope;
+            for_loop->loop.postfix->origin = for_loop;
             assert(for_t);
 
             auto* it_symbol = expect_and_consume(TokenID::Symbol);
@@ -439,7 +453,19 @@ namespace AST
             return for_loop;
         }
 
-        Node* parse_statement()
+        Node* parse_break(Node* parent)
+        {
+            auto* break_token = expect_and_consume_if_keyword(KeywordID::Break);
+            assert(break_token);
+
+            auto* break_node = nb.append(NodeType::Break);
+            assert(current_scope);
+            break_node->break_.block = current_scope;
+            break_node->break_.origin = parent;
+            return break_node;
+        }
+
+        Node* parse_statement(Node* current_parent = nullptr)
         {
             auto* t = get_next_token();
             TokenID id = static_cast<TokenID>(t->id);
@@ -464,6 +490,10 @@ namespace AST
                         {
                             statement = parse_for();
                         } break;
+                        case KeywordID::Break:
+                        {
+                            statement = parse_break(current_parent);
+                        } break;
                         default:
                             RNS_NOT_IMPLEMENTED;
                             break;
@@ -480,9 +510,10 @@ namespace AST
                     break;
             }
 
-            if (statement)
+            if (statement && statement->type != NodeType::Conditional && statement->type != NodeType::Loop)
             {
-                expect_and_consume(';');
+                auto* colon = expect_and_consume(';');
+                assert(colon);
             }
             return statement;
         }
@@ -514,11 +545,10 @@ namespace AST
                 // @TODO: bad practice to use tagged union fields without knowing if they are what you want, but useful here
                 auto left_expression_operator_precedence = operator_precedence.rules[(u32)binary_op_left_expression->bin_op.op];
                 auto right_expression_operator_precedence = operator_precedence.rules[(u32)bin_op];
+                bool right_precedes_left = binary_op_left_expression->type == NodeType::BinOp && right_expression_operator_precedence < left_expression_operator_precedence &&
+                    !binary_op_left_expression->bin_op.parenthesis && (binary_op_right_expression->type != NodeType::BinOp || (binary_op_right_expression->type == NodeType::BinOp && !binary_op_right_expression->bin_op.parenthesis));
 
-                if (binary_op_left_expression->type == NodeType::BinOp &&
-                    right_expression_operator_precedence < left_expression_operator_precedence &&
-                    !binary_op_left_expression->bin_op.parenthesis &&
-                    (binary_op_right_expression->type != NodeType::BinOp || (binary_op_right_expression->type == NodeType::BinOp && !binary_op_right_expression->bin_op.parenthesis))) // @Info: this means: right expression precedes left one
+                if (right_precedes_left)
                 {
                     Node* right_operand_of_left_binary_expression = binary_op_left_expression->bin_op.right;
                     binary_op_left_expression->bin_op.right = nb.append(NodeType::BinOp);
@@ -600,75 +630,6 @@ namespace AST
             }
         }
 
-        // Integrate in parse function
-        void parse_prototype(FunctionDeclaration* fn)
-        {
-            auto token_id = expect_and_consume('(');
-
-            FunctionType fn_type = {};
-
-            Token* next_token;
-            bool arg_left_to_parse = (next_token = get_next_token())->id != ')';
-
-            if (arg_left_to_parse)
-            {
-                s64 allocated_arg_count = 32;
-                fn->variables = fn->variables.create(&allocator, allocated_arg_count);
-                fn_type.arg_types = fn_type.arg_types.create(&allocator, allocated_arg_count);
-            }
-
-            while (arg_left_to_parse)
-            {
-                auto* node = parse_expression();
-                if (!node)
-                {
-                    compiler.print_error({}, "error parsing argument %lld", current_function->variables.len + 1);
-                    return;
-                }
-                if (node->type != NodeType::VarDecl)
-                {
-                    compiler.print_error({}, "expected argument", current_function->variables.len + 1);
-                    return;
-                }
-                node->var_decl.is_fn_arg = true;
-                fn_type.arg_types.append(node->var_decl.type);
-                fn->variables.append(node);
-                arg_left_to_parse = (next_token = get_next_token())->id != ')';
-            }
-
-            if (!expect_and_consume(')'))
-            {
-                compiler.print_error({}, "Expected end of argument list");
-                return;
-            }
-
-            if (expect_and_consume('-') && expect_and_consume('>'))
-            {
-                auto* t = expect_and_consume(TokenID::Type);
-                if (!t)
-                {
-                    t = expect_and_consume(TokenID::Symbol);
-                }
-                if (!t)
-                {
-                    compiler.print_error({}, "Expected return type");
-                    return;
-                }
-                fn_type.ret_type = get_type(t);
-                if (!fn_type.ret_type)
-                {
-                    compiler.print_error({}, "Error parsing return type");
-                    return;
-                }
-            }
-            else
-            {
-                fn_type.ret_type = get_native_type(NativeTypeID::None);
-            }
-
-            fn->type = function_type_declarations.append(fn_type);
-        }
-
         void parse_block(ScopeBlock* scope_block, bool allow_no_braces)
         {
             scope_block->parent = current_scope;
@@ -694,7 +655,7 @@ namespace AST
 
                 while (statement_left_to_parse)
                 {
-                    auto* statement = parse_statement();
+                    auto* statement = parse_statement(scope_block->origin);
                     // @TODO: error logging and out
                     if (!statement)
                     {
@@ -702,6 +663,11 @@ namespace AST
                         return;
                     }
                     scope_block->statements.append(statement);
+                    if (statement->type == NodeType::Conditional && statement->conditional.fake_else)
+                    {
+                        scope_block = statement->conditional.else_block;
+                        scope_block->statements = scope_block->statements.create(&allocator, 64);
+                    }
                     statement_left_to_parse = (next_token = get_next_token())->id != expected_end;
                 }
 
@@ -709,7 +675,7 @@ namespace AST
             }
             else
             {
-                auto statement = parse_statement();
+                auto statement = parse_statement(scope_block->origin);
                 // @TODO: error logging and out
                 if (!statement)
                 {
@@ -719,15 +685,6 @@ namespace AST
                 scope_block->statements = scope_block->statements.create(&allocator, 1);
                 scope_block->statements.append(statement);
             }
-        }
-
-        void parse_body(FunctionDeclaration* fn)
-        {
-            current_scope = fn->scope_blocks.allocate();
-            current_scope->type = ScopeType::Function;
-            current_scope->parent = nullptr;
-
-            parse_block(current_scope, false);
         }
 
         FunctionDeclaration parse_function(bool* parsed_ok)
@@ -750,13 +707,81 @@ namespace AST
             current_function = &fn;
 
             // @TODO: change this to be properly handled by the function parser
-            parse_prototype(&fn);
+            auto token_id = expect_and_consume('(');
+
+            FunctionType fn_type = {};
+
+            Token* next_token;
+            bool arg_left_to_parse = (next_token = get_next_token())->id != ')';
+
+            s64 allocated_arg_count = 32;
+            fn.variables = fn.variables.create(&allocator, allocated_arg_count);
+
+            if (arg_left_to_parse)
+            {
+                fn_type.arg_types = fn_type.arg_types.create(&allocator, allocated_arg_count);
+            }
+
+            while (arg_left_to_parse)
+            {
+                auto* node = parse_expression();
+                if (!node)
+                {
+                    compiler.print_error({}, "error parsing argument %lld", current_function->variables.len + 1);
+                    return fn;
+                }
+                if (node->type != NodeType::VarDecl)
+                {
+                    compiler.print_error({}, "expected argument", current_function->variables.len + 1);
+                    return fn;
+                }
+                node->var_decl.is_fn_arg = true;
+                fn_type.arg_types.append(node->var_decl.type);
+                fn.variables.append(node);
+                arg_left_to_parse = (next_token = get_next_token())->id != ')';
+            }
+
+            if (!expect_and_consume(')'))
+            {
+                compiler.print_error({}, "Expected end of argument list");
+                return fn;
+            }
+
+            if (expect_and_consume('-') && expect_and_consume('>'))
+            {
+                auto* t = expect_and_consume(TokenID::Type);
+                if (!t)
+                {
+                    t = expect_and_consume(TokenID::Symbol);
+                }
+                if (!t)
+                {
+                    compiler.print_error({}, "Expected return type");
+                    return fn;
+                }
+                fn_type.ret_type = get_type(t);
+                if (!fn_type.ret_type)
+                {
+                    compiler.print_error({}, "Error parsing return type");
+                    return fn;
+                }
+            }
+            else
+            {
+                fn_type.ret_type = get_native_type(NativeTypeID::None);
+            }
+
+            fn.type = function_type_declarations.append(fn_type);
             if (compiler.errors_reported)
             {
                 return fn;
             }
 
-            parse_body(&fn);
+            current_scope = fn.scope_blocks.allocate();
+            current_scope->type = ScopeType::Function;
+            current_scope->parent = nullptr;
+            parse_block(current_scope, false);
+
             if (compiler.errors_reported)
             {
                 return fn;

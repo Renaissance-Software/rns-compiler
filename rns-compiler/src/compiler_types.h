@@ -412,6 +412,7 @@ namespace AST
         VarExpr,
         Conditional,
         Loop,
+        Break,
     };
 
     struct BinaryOp
@@ -442,16 +443,13 @@ namespace AST
         Function,
     };
 
-    struct Scope
-    {
-        Scope* parent;
-        ScopeType type;
-    };
-
     using NodeRefBuffer = RNS::Buffer<Node*>;
-    struct ScopeBlock : public Scope
+    struct ScopeBlock
     {
         NodeRefBuffer statements;
+        ScopeBlock* parent;
+        Node* origin;
+        ScopeType type;
     };
 
     struct VarDecl
@@ -469,6 +467,7 @@ namespace AST
         Node* condition;
         ScopeBlock* if_block;
         ScopeBlock* else_block;
+        bool fake_else;
     };
 
     struct Loop
@@ -476,6 +475,12 @@ namespace AST
         ScopeBlock* prefix;
         ScopeBlock* body;
         ScopeBlock* postfix;
+    };
+
+    struct Break
+    {
+        ScopeBlock* block;
+        Node* origin;
     };
 
     struct FunctionDeclaration
@@ -499,6 +504,7 @@ namespace AST
             ScopeBlock scope;
             Conditional conditional;
             Loop loop;
+            Break break_;
         };
     };
 

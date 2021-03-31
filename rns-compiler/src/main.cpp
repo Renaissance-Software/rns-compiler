@@ -32,48 +32,8 @@ enum class CompilerIR
 #endif
 };
 
-s32 rns_main(s32 argc, char* argv[])
+bool compiler_workflow(RNS::String file)
 {
-#ifdef SL_INSTR
-#endif
-    if (argc < 2)
-    {
-        printf("Not enough arguments\n");
-        return -1;
-    }
-
-#if SL_INSTR
-    PerformanceAPI_BeginEvent("Main function", nullptr, PERFORMANCEAPI_DEFAULT_COLOR);
-#endif
-
-    char print_error[1024]{};
-
-    RNS::String file;
-
-#define READ_FROM_FILE 0
-
-#if READ_FROM_FILE
-    const char* filename = argv[1];
-    assert(filename);
-
-
-    DebugAllocator file_allocator = create_allocator(RNS_MEGABYTE(1));
-    auto file_buffer = RNS::file_load(filename, &file_allocator);
-    if (!file_buffer.ptr)
-    {
-        printf("File %s not found\n", filename); 
-        return -1;
-    }
-
-    file.ptr = file_buffer.ptr;
-    file.len = static_cast<u32>(file_buffer.len);
-#else
-    const char file_content[] = "main :: () -> s32 { result : s32 = ((10 + 4) + (1 - 5 * 3 + (23 - 5))) * (123 * (5 - 4)); return result; }";
-
-    file.ptr = (char*)file_content;
-    file.len = rns_array_length(file_content);
-#endif
-
     Compiler compiler = {
         .page_allocator = default_create_allocator(RNS_GIGABYTE(1)),
         .common_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(100)),
@@ -88,14 +48,14 @@ s32 rns_main(s32 argc, char* argv[])
     if (compiler.errors_reported)
     {
         printf("Lexer failed!\n");
-        return -1;
+        return false;
     }
 
     auto parser_result = parse(compiler, lexer_result, type_declarations);
     if (compiler.errors_reported)
     {
         printf("Parsing failed.\n");
-        return -1;
+        return false;
     }
 
 #if USE_LLVM
@@ -120,7 +80,69 @@ s32 rns_main(s32 argc, char* argv[])
             break;
     }
 #endif
+    if (compiler.errors_reported)
+    {
+        printf("IR generation failed\n");
+        return false;
+    }
 
+    default_free_allocator(&compiler.page_allocator);
+    return true;
+}
+
+#include "test_files.inc"
+
+s32 rns_main(s32 argc, char* argv[])
+{
+#if SL_INSTR
+    PerformanceAPI_BeginEvent("Main function", nullptr, PERFORMANCEAPI_DEFAULT_COLOR);
+#endif
+
+#define TEST_FILES 0
+#if TEST_FILES
+    for (auto i = 0; i < rns_array_length(test_files); i++)
+    {
+        printf("Test %d: %s\n", i + 1, test_files[i].ptr);
+        bool result = compiler_workflow(test_files[i]);
+        if (result)
+        {
+            printf("Test %d passed\n", i + 1);
+        }
+        else
+        {
+            printf("Test %d failed\n", i + 1);
+            return -1;
+        }
+    }
+#endif
+    RNS::String working_test_case = NEW_TEST(
+    main :: () -> s32
+    {
+        sum: s32 = 0;
+        for i : 4
+        {
+            if i == 2
+            {
+                break;
+            }
+            
+            sum = sum + i;
+        }
+
+        return sum;
+    }
+    );
+
+    bool result = compiler_workflow(working_test_case);
+    if (result)
+    {
+        printf("Working test case passed\n");
+    }
+    else
+    {
+        printf("Working test case failed\n");
+        return -1;
+    }
 #if SL_INSTR
     PerformanceAPI_EndEvent();
 #endif
