@@ -6,5 +6,5 @@ struct RNS::Allocator;
 
 namespace LLVM
 {
-    void encode(RNS::Allocator* allocator, AST::Result* parser_result);
+    void encode(Compiler& compiler, AST::Result* parser_result);
 }

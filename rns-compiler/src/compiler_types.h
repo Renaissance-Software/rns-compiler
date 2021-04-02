@@ -75,26 +75,6 @@ inline OperatorPrecedence operator_precedence = initialize_precedence_rules();
 
 namespace Typing
 {
-    struct Type;
-    using TypeBuffer = RNS::Buffer<Type>;
-
-    enum class NativeTypeID : u8
-    {
-        None,
-        U1,
-        U8,
-        U16,
-        U32,
-        U64,
-        S8,
-        S16,
-        S32,
-        S64,
-        F32,
-        F64,
-        Count,
-    };
-
     enum class TypeID : u8
     {
         // Primitive types
@@ -120,6 +100,9 @@ namespace Typing
         FixedVectorType,
         ScalableVectorType,
     };
+
+    struct Type;
+    using TypeBuffer = RNS::Buffer<Type>;
 
     struct FloatType
     {
@@ -167,11 +150,17 @@ namespace Typing
     {
         Type* appointee;
         u16 bits;
+
+        static Type* get(Type* appointee)
+        {
+            return nullptr;
+        }
     };
 
     struct Type
     {
         TypeID id;
+        RNS::String name;
         union
         {
             IntegerType integer_t;
@@ -180,6 +169,14 @@ namespace Typing
             EnumType enum_t;
             FunctionType function_t;
         };
+
+        static TypeBuffer type_buffer;
+        static void init(Allocator* allocator, s64 count);
+        static Type* get(RNS::String name);
+        static Type* get_void_type();
+        static Type* get_integer_type(u16 bits, bool is_signed);
+        static Type* get_label();
+        static Type* get_bool_type();
     };
 
     struct ConstantInt
@@ -415,7 +412,7 @@ namespace AST
         Loop,
         Break,
         Function,
-        FunctionType,
+        TypeExpr,
     };
 
     struct BinaryOp
@@ -446,7 +443,8 @@ namespace AST
             LoopPrefix,
             LoopBody,
             LoopPostfix,
-            ConditionalBlock,
+            IfBlock,
+            ElseBlock,
             Function,
         };
         NodeRefBuffer statements;
@@ -460,6 +458,7 @@ namespace AST
         Type* type;
         Node* value;
         Node* scope;
+        void* backend_ref;
         bool is_fn_arg;
     };
 
@@ -468,6 +467,7 @@ namespace AST
         Node* condition;
         Node* if_block;
         Node* else_block;
+        void* exit_block;
     };
 
     struct Loop
@@ -475,17 +475,20 @@ namespace AST
         Node* prefix;
         Node* body;
         Node* postfix;
+        void* exit_block;
+        void* continue_block;
     };
 
     struct Break
     {
-        Node* block;
+        Node* target;
         Node* origin;
     };
 
     struct FunctionDeclaration
     {
         NodeRefBuffer scope_blocks;
+        NodeRefBuffer arguments;
         NodeRefBuffer variables;
         Node* type;
     };
@@ -506,10 +509,7 @@ namespace AST
             Loop loop;
             Break break_;
             FunctionDeclaration function;
-            StructType struct_decl;
-            UnionType union_decl;
-            EnumType enum_decl;
-            FunctionType function_type;
+            Type type_expr;
         };
     };
 

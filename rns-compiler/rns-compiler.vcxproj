@@ -30,7 +30,14 @@
     <ClCompile Include="src\x86_64.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\arch.h" />
+    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\compiler.h" />
+    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\c_containers.h" />
+    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\data_structures.h" />
+    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\os.h" />
+    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\os_internal.h" />
     <ClInclude Include="dependencies\rns-lib\lib\include\RNS\profiler.h" />
+    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\types.h" />
     <ClInclude Include="src\compiler_types.h" />
     <ClInclude Include="src\lexer.h" />
     <ClInclude Include="src\llvm_bytecode.h" />

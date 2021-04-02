@@ -41,17 +41,16 @@ bool compiler_workflow(RNS::String file)
     };
 
     Allocator type_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(5));
-    TypeBuffer type_declarations = TypeBuffer::create(&type_allocator, 1024);
-    register_native_types(type_declarations);
+    Type::init(&type_allocator, type_allocator.pool.cap / sizeof(Type));
 
-    LexerResult lexer_result = lex(compiler, type_declarations, file);
+    LexerResult lexer_result = lex(compiler, file);
     if (compiler.errors_reported)
     {
         printf("Lexer failed!\n");
         return false;
     }
 
-    auto parser_result = parse(compiler, lexer_result, type_declarations);
+    auto parser_result = parse(compiler, lexer_result);
     if (compiler.errors_reported)
     {
         printf("Parsing failed.\n");
@@ -60,7 +59,7 @@ bool compiler_workflow(RNS::String file)
 
 #if USE_LLVM
     CompilerIR compiler_ir = CompilerIR::LLVM;
-    LLVM::encode(&bc_allocator, &parser_result);
+    LLVM::encode(compiler, &parser_result);
 #else
     CompilerIR compiler_ir = CompilerIR::LLVM_CUSTOM;
     switch (compiler_ir)
@@ -73,7 +72,7 @@ bool compiler_workflow(RNS::String file)
         } break;
         case CompilerIR::LLVM_CUSTOM:
         {
-            LLVM::encode(compiler, parser_result.node_buffer, parser_result.function_type_declarations, type_declarations, parser_result.function_declarations);
+            LLVM::encode(compiler, parser_result.node_buffer, parser_result.function_type_declarations, parser_result.function_declarations);
         } break;
         default:
             RNS_UNREACHABLE;
@@ -140,7 +139,7 @@ s32 rns_main(s32 argc, char* argv[])
                 {
                     for j : 10
                     {
-                        sum = sum + j;
+                        sum = sum + 1;
                     }
                 }
                 sum = sum + sum;

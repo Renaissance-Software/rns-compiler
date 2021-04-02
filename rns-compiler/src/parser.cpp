@@ -23,7 +23,6 @@ namespace AST
         EnumBuffer enum_declarations;
         FunctionTypeBuffer function_type_declarations;
 
-        TypeBuffer& type_declarations;
         Node* current_scope;
         Node* current_function;
 
@@ -193,11 +192,6 @@ namespace AST
             return BinOp::None;
         }
 
-        Type* get_native_type(NativeTypeID native_type)
-        {
-            return this->type_declarations.get(static_cast<s64>(native_type));
-        }
-
         Type* get_type(Token* t)
         {
             if (t->get_id() == TokenID::Type)
@@ -219,10 +213,18 @@ namespace AST
         Node* find_existing_variable(Token* token)
         {
             RNS::String name = { token->symbol, token->offset };
+            for (auto* var : current_function->function.arguments)
+            {
+                assert(var->type == NodeType::VarDecl);
+                if (var->var_decl.name.equal(name))
+                {
+                    return var;
+                }
+            }
             for (auto* var : current_function->function.variables)
             {
                 assert(var->type == NodeType::VarDecl);
-                if (var->var_decl.name.equal(&name))
+                if (var->var_decl.name.equal(name))
                 {
                     return var;
                 }
@@ -310,7 +312,7 @@ namespace AST
             auto* if_block = nb.append(NodeType::Block, node);
             node->conditional.if_block = if_block;
             current_function->function.scope_blocks.append(if_block);
-            if_block->block.type = Block::Type::ConditionalBlock;
+            if_block->block.type = Block::Type::IfBlock;
             if_block->parent = node;
             current_scope = if_block;
 
@@ -338,7 +340,7 @@ namespace AST
                 auto* else_block = nb.append(NodeType::Block, node);
                 node->conditional.else_block = else_block;
                 current_function->function.scope_blocks.append(else_block);
-                else_block->block.type = Block::Type::ConditionalBlock;
+                else_block->block.type = Block::Type::ElseBlock;
                 current_scope = else_block;
 
                 braces = expect_and_consume('{');
@@ -391,7 +393,7 @@ namespace AST
             it_decl->var_decl.is_fn_arg = false;
             it_decl->var_decl.name = RNS::String{ it_symbol->symbol, it_symbol->offset };
             it_decl->var_decl.scope = current_scope;
-            it_decl->var_decl.type = &type_declarations[(u32)NativeTypeID::S32];
+            it_decl->var_decl.type = Type::get_integer_type(32, true);
             // @TODO: we should match it to the right operand
             it_decl->var_decl.value = nb.append(NodeType::IntLit, it_decl);
             it_decl->var_decl.value->int_lit.bit_count = 32;
@@ -474,7 +476,15 @@ namespace AST
 
             auto* break_node = nb.append(NodeType::Break, parent);
             assert(current_scope);
-            break_node->break_.block = current_scope;
+            auto* target = current_scope;
+            while (target->type != NodeType::Loop)
+            {
+                auto* parent = target->parent;
+                assert(parent);
+                target = parent;
+            }
+            assert(target);
+            break_node->break_.target = target;
             return break_node;
         }
 
@@ -724,7 +734,7 @@ namespace AST
 
             s64 allocated_arg_count = 32;
             
-            function_node->function.variables = function_node->function.variables.create(&allocator, allocated_arg_count);
+            function_node->function.arguments = function_node->function.arguments.create(&allocator, allocated_arg_count);
 
             if (arg_left_to_parse)
             {
@@ -736,17 +746,17 @@ namespace AST
                 auto* node = parse_expression(function_node);
                 if (!node)
                 {
-                    compiler.print_error({}, "error parsing argument %lld", current_function->function.variables.len + 1);
+                    compiler.print_error({}, "error parsing argument %lld", current_function->function.arguments.len + 1);
                     return nullptr;
                 }
                 if (node->type != NodeType::VarDecl)
                 {
-                    compiler.print_error({}, "expected argument", current_function->function.variables.len + 1);
+                    compiler.print_error({}, "expected argument", current_function->function.arguments.len + 1);
                     return nullptr;
                 }
                 node->var_decl.is_fn_arg = true;
                 fn_type.arg_types.append(node->var_decl.type);
-                function_node->function.variables.append(node);
+                function_node->function.arguments.append(node);
                 arg_left_to_parse = (next_token = get_next_token())->id != ')';
             }
 
@@ -777,12 +787,11 @@ namespace AST
             }
             else
             {
-                fn_type.ret_type = get_native_type(NativeTypeID::None);
+                fn_type.ret_type = Type::get_void_type();
             }
 
-            function_node->function.type = nb.append(NodeType::FunctionType, function_node);
-            function_type_declarations.append(function_node->function.type);
-            function_node->function.type->function_type = fn_type;
+            function_node->function.type = nb.append(NodeType::TypeExpr, function_node);
+            function_node->function.type->type_expr.function_t = fn_type;
 
             if (compiler.errors_reported)
             {
@@ -792,7 +801,7 @@ namespace AST
             current_scope = nb.append(NodeType::Block, function_node);
             function_node->function.scope_blocks.append(current_scope);
             current_scope->block.type = Block::Type::Function;
-            current_scope->parent = nullptr;
+            current_scope->parent = function_node;
 
             parse_block(current_scope, false);
 
@@ -860,7 +869,7 @@ const char* node_type_to_string(NodeType type)
 //}
 
 // @TODO: reconsider what type is to be returned from top level declarations
-AST::Result parse(Compiler& compiler, LexerResult& lexer_result, TypeBuffer& type_declarations)
+AST::Result parse(Compiler& compiler, LexerResult& lexer_result)
 {
     RNS_PROFILE_FUNCTION();
     compiler.subsystem = Compiler::Subsystem::Parser;
@@ -877,7 +886,6 @@ AST::Result parse(Compiler& compiler, LexerResult& lexer_result, TypeBuffer& typ
         .union_declarations = UnionBuffer::create(&parser.allocator, 64),
         .enum_declarations = EnumBuffer::create(&parser.allocator, 64),
         .function_type_declarations = FunctionTypeBuffer::create(&parser.allocator, 64),
-        .type_declarations = type_declarations,
     };
 
     while (parser.parser_it < parser.len)

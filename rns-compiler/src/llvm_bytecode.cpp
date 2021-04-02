@@ -6,10 +6,16 @@
 
 namespace LLVM
 {
+    struct BasicBlock;
+    struct Function;
+    struct Instruction;
+    using BasicBlockBuffer = Buffer<BasicBlock>;
+    using InstructionBuffer = Buffer<Instruction>;
     using namespace RNS;
-    using LLVMID = u32;
+    using namespace AST;
+    using IDType = u64;
 
-    enum class Instruction : u8
+    enum class InstructionID : u8
     {
         // Terminator
         Ret = 1,
@@ -97,486 +103,254 @@ namespace LLVM
         RNS_PATCH = 0xFF,
     };
 
-    enum class GlobalValue : u8
+    struct IDManager
     {
-        Function,
-        GlobalAlias,
-        GlobalIFunc,
-        GlobalVariable,
-    };
+        static Buffer<String> names;
+        static StringBuffer buffer;
+        static IDType next_id;
 
-    enum class ConstantID : u8
-    {
-        BlockAddress,
-        Expression,
-        Array,
-        Struct,
-        Vector,
-        Undefined,
-        AggregateZero,
-        DataArray,
-        DataVector,
-        Int,
-        FP,
-        PointerNull,
-        TokenNone,
-    };
-
-    struct Constant
-    {
-        ConstantID id;
-        union
+        static IDType append(const char* name = nullptr, u32 name_len = 0)
         {
-            ConstantInt integer;
-        };
-    };
-
-    enum class MemoryID
-    {
-        Use,
-        Def,
-        Phi,
-    };
-
-    struct Symbol
-    {
-        enum class ID
-        {
-            Constant,
-            Index,
-            Label,
-            EntryBlockLabel,
-        };
-
-        ID type;
-        union
-        {
-            Constant constant;
-            LLVMID index;
-        } result;
-
-        void to_string(char* buffer)
-        {
-            switch (type)
+            auto id = next_id++;
+            if (name)
             {
-                case Symbol::ID::Constant:
+                if (name_len == 0)
                 {
-                    if (result.constant.integer.is_signed)
+                    name_len = strlen(name);
+                }
+                if (name > 0)
+                {
+                    auto allocated_name = buffer.append(name, name_len);
+                    String new_string = {
+                        .ptr = allocated_name,
+                        .len = name_len,
+                    };
+                    names.append(new_string);
+                    return id;
+                }
+            }
+
+            names.append({});
+            return id;
+        }
+
+        static void init(Allocator* allocator, s64 name_count, s64 string_buffer_capacity)
+        {
+            names = names.create(allocator, name_count);
+            buffer = buffer.create(allocator, string_buffer_capacity);
+        }
+    };
+    Buffer<String> IDManager::names;
+    StringBuffer IDManager::buffer;
+    IDType IDManager::next_id;
+
+    struct Value
+    {
+        IDType id;
+        Type* type;
+
+        static Value New(Type* type = nullptr, const char* name = nullptr)
+        {
+            Value e = {
+                .id = IDManager::append(name),
+                .type = type,
+            };
+
+            return e;
+        }
+
+        void print();
+    };
+
+    struct SlotTracker
+    {
+        u64 next_id;
+        u64 not_used;
+        u64 starting_id;
+        Buffer<Value*> map;
+
+        static SlotTracker create(Allocator* allocator, s64 count)
+        {
+            SlotTracker slot_tracker = {
+                .map = slot_tracker.map.create(allocator, count),
+            };
+            
+            return slot_tracker;
+        }
+
+        u64 find(Value* value)
+        {
+            for (auto i = 0; i < map.len; i++)
+            {
+                if (map[i] == value)
+                {
+                    return i + starting_id;
+                }
+            }
+
+            return UINT64_MAX;
+        }
+
+        template <typename T>
+        u64 new_id(T value)
+        {
+            auto id = next_id++;
+            map.append(reinterpret_cast<Value*>(value));
+            return id;
+        }
+    };
+
+    struct APInt
+    {
+        Value e;
+        union
+        {
+            u64 eight_byte;
+            u64* more_than_eight_byte;
+        } value;
+        u32 bit_count;
+        bool is_signed;
+
+        static APInt* get(Allocator* allocator, Type* integer_type, u64 value, bool is_signed)
+        {
+            assert(integer_type->id == TypeID::IntegerType);
+            auto bits = integer_type->integer_t.bits;
+            assert(bits >= 1 && bits <= 64);
+
+            auto* new_int = new(allocator) APInt;
+            assert(new_int);
+            *new_int = {
+                .e = Value::New(integer_type),
+                .value = value,
+                .bit_count = bits,
+                .is_signed = is_signed,
+            };
+
+            return new_int;
+        }
+    };
+
+    enum class CmpType : u8
+    {
+        // Opcode            U L G E    Intuitive operation
+        FCMP_FALSE = 0, ///< 0 0 0 0    Always false (always folded)
+        FCMP_OEQ = 1,   ///< 0 0 0 1    True if ordered and equal
+        FCMP_OGT = 2,   ///< 0 0 1 0    True if ordered and greater than
+        FCMP_OGE = 3,   ///< 0 0 1 1    True if ordered and greater than or equal
+        FCMP_OLT = 4,   ///< 0 1 0 0    True if ordered and less than
+        FCMP_OLE = 5,   ///< 0 1 0 1    True if ordered and less than or equal
+        FCMP_ONE = 6,   ///< 0 1 1 0    True if ordered and operands are unequal
+        FCMP_ORD = 7,   ///< 0 1 1 1    True if ordered (no nans)
+        FCMP_UNO = 8,   ///< 1 0 0 0    True if unordered: isnan(X) | isnan(Y)
+        FCMP_UEQ = 9,   ///< 1 0 0 1    True if unordered or equal
+        FCMP_UGT = 10,  ///< 1 0 1 0    True if unordered or greater than
+        FCMP_UGE = 11,  ///< 1 0 1 1    True if unordered, greater than, or equal
+        FCMP_ULT = 12,  ///< 1 1 0 0    True if unordered or less than
+        FCMP_ULE = 13,  ///< 1 1 0 1    True if unordered, less than, or equal
+        FCMP_UNE = 14,  ///< 1 1 1 0    True if unordered or not equal
+        FCMP_TRUE = 15, ///< 1 1 1 1    Always true (always folded)
+        FIRST_FCMP_PREDICATE = FCMP_FALSE,
+        LAST_FCMP_PREDICATE = FCMP_TRUE,
+        BAD_FCMP_PREDICATE = FCMP_TRUE + 1,
+        ICMP_EQ = 32,  ///< equal
+        ICMP_NE = 33,  ///< not equal
+        ICMP_UGT = 34, ///< unsigned greater than
+        ICMP_UGE = 35, ///< unsigned greater or equal
+        ICMP_ULT = 36, ///< unsigned less than
+        ICMP_ULE = 37, ///< unsigned less or equal
+        ICMP_SGT = 38, ///< signed greater than
+        ICMP_SGE = 39, ///< signed greater or equal
+        ICMP_SLT = 40, ///< signed less than
+        ICMP_SLE = 41, ///< signed less or equal
+        FIRST_ICMP_PREDICATE = ICMP_EQ,
+        LAST_ICMP_PREDICATE = ICMP_SLE,
+        BAD_ICMP_PREDICATE = ICMP_SLE + 1
+    };
+
+    struct CallBase
+    {
+        FunctionType* function_type;
+    };
+    struct AllocaInstruction
+    {
+        Type* allocated_type;
+    };
+
+    struct GetElementPtrInstruction
+    {
+        Type* source_type;
+        Type* result_type;
+    };
+
+    struct Compare
+    {
+        CmpType type;
+    };
+
+    struct Instruction
+    {
+        struct
+        {
+            Value value;
+            InstructionID id;
+            BasicBlock* parent;
+        } base;
+
+        Value* operands[15];
+        u8 operand_count;
+
+        union
+        {
+            AllocaInstruction alloca_i;
+            GetElementPtrInstruction get_element_ptr;
+            Compare compare;
+        };
+
+        void print(SlotTracker& slot_tracker)
+        {
+            switch (base.id)
+            {
+                case InstructionID::Alloca:
+                {
+                    auto id = slot_tracker.new_id(this);
+                    printf("%%%llu = alloca i32, align 4\n", id);
+                } break;
+                case InstructionID::Store:
+                {
+                    auto* value = operands[0];
+                    auto* ptr = operands[1];
+                    auto id = slot_tracker.find(ptr);
+                    printf("store i32 ");
+                    value->print();
+                    printf(", i32* %%%llu, align 4\n", id);
+                } break;
+                case InstructionID::Br:
+                {
+                    RNS_NOT_IMPLEMENTED;
+                    if (operand_count == 1)
                     {
-                        sprintf(buffer, "-%llu", result.constant.integer.lit);
+
                     }
                     else
                     {
-                        sprintf(buffer, "%llu", result.constant.integer.lit);
+
                     }
                 } break;
-                case Symbol::ID::Index:
-                {
-                    sprintf(buffer, "%%%u", result.index);
-                } break;
-                case Symbol::ID::Label:
-                {
-                    sprintf(buffer, "label %%%u", result.index);
-                } break;
-            }
-        }
-    };
-
-    struct Ret
-    {
-        Type* type;
-        Symbol symbol;
-    };
-
-    // @Info: these do not form part of the instruction buffer since they need to be allocated at the top of the function
-    struct Alloca
-    {
-        Type* type;
-        LLVMID index;
-        u32 count;
-        u32 alignment;
-    };
-
-    struct InstructionInfo;
-
-    struct Store
-    {
-        Type* type;
-        Symbol symbol;
-        InstructionInfo* alloca_i;
-        u32 alignment;
-    };
-
-    struct Load
-    {
-        Type* type;
-        InstructionInfo* alloca_i;
-        LLVMID index;
-        u32 alignment;
-    };
-
-    struct Add
-    {
-        Type* type;
-        Symbol left, right;
-        LLVMID index;
-    };
-
-    struct Sub
-    {
-        Type* type;
-        Symbol left, right;
-        LLVMID index;
-    };
-
-    struct Mul
-    {
-        Type* type;
-        Symbol left, right;
-        LLVMID index;
-    };
-
-    struct ICmp
-    {
-        enum class ID : u8
-        {
-            Equal,
-            NotEqual,
-            UnsignedGreaterThan,
-            UnsignedGreaterOrEqual,
-            UnsignedLessThan,
-            UnsignedLessOrEqual,
-            SignedGreaterThan,
-            SignedGreaterOrEqual,
-            SignedLessThan,
-            SignedLessOrEqual,
-        };
-        ID id;
-        Type* type;
-        Symbol left, right;
-        LLVMID index;
-
-        const char* id_to_string()
-        {
-            switch (id)
-            {
-                case ID::Equal:
-                {
-                    return "eq";
-                }
-                case ID::NotEqual:
-                {
-                    return "ne";
-                }
-                case ID::UnsignedGreaterThan:
-                {
-                    return "ugt";
-                }
-                case ID::UnsignedGreaterOrEqual:
-                {
-                    return "uge";
-                }
-
-                case ID::UnsignedLessThan:
-                {
-                    return "ult";
-                }
-                case ID::UnsignedLessOrEqual:
-                {
-                    return "ule";
-                }
-                case ID::SignedGreaterThan:
-                {
-                    return "sgt";
-                }
-                case ID::SignedGreaterOrEqual:
-                {
-                    return "sge";
-                }
-                case ID::SignedLessThan:
-                {
-                    return "slt";
-                }
-                case ID::SignedLessOrEqual:
-                {
-                    return "sle";
-                }
                 default:
                     RNS_NOT_IMPLEMENTED;
-                    return nullptr;
+                    break;
             }
         }
     };
 
-    struct Br
-    {
-        Type* type;
-        Symbol condition;
-        Symbol if_label, else_label;
-    };
-
-    const char* type_to_string(Type* type)
+    void Value::print()
     {
         switch (type->id)
         {
             case TypeID::IntegerType:
             {
-                switch (type->integer_t.bits)
-                {
-                    case 32:
-                    {
-                        return "i32";
-                    }
-                    default:
-                    {
-                        RNS_NOT_IMPLEMENTED;
-                    } break;
-                }
-            } break;
-            default:
-                RNS_NOT_IMPLEMENTED;
-                break;
-        }
-        return nullptr;
-    }
-
-    // @TODO: this is no LLVM instruction, but more of a patch for us to do
-    enum class JumpType
-    {
-        Direct,
-        Conditional,
-    };
-
-    enum class HighLevelType
-    {
-        Break,
-        NoElse,
-    };
-
-    struct BasicBlock;
-    struct IRBuilder;
-
-    struct PatchBlock
-    {
-        JumpType type;
-        HighLevelType keyword;
-        Symbol condition; // @Info: This is just for the conditional jump
-        BasicBlock* ir_jump_from;
-        Node* ast_true_jump;
-        Node* ast_false_jump;
-        Node* ast_parent_node;
-        BasicBlock* ir_true_block;
-        BasicBlock* ir_false_block;
-        BasicBlock* ir_parent;
-        bool done;
-    };
-
-    struct InstructionInfo
-    {
-        Instruction id;
-        union
-        {
-            Ret ret;
-            Alloca alloca_i;
-            Store store;
-            Load load;
-            Add add;
-            Sub sub;
-            Mul mul;
-            ICmp icmp;
-            Br br;
-        };
-
-        void print(Symbol block_label)
-        {
-            if (block_label.type == Symbol::ID::EntryBlockLabel)
-            {
-                printf("f:\t");
-            }
-            else
-            {
-                printf("%u:\t", block_label.result.index);
-            }
-            switch (id)
-            {
-                case Instruction::Store:
-                {
-                    char value_buffer[64];
-                    store.symbol.to_string(value_buffer);
-                    assert(value_buffer && *value_buffer);
-
-                    printf("store %s %s, %s* %%%u, align %u\n", type_to_string(store.type), value_buffer, type_to_string(store.alloca_i->alloca_i.type), store.alloca_i->alloca_i.index, store.alignment);
-                } break;
-                case Instruction::Load:
-                {
-                    char value_buffer[64];
-                    store.symbol.to_string(value_buffer);
-                    assert(value_buffer && *value_buffer);
-
-                    printf("%%%u = load %s, %s* %%%u, align %u\n", load.index, type_to_string(load.type), type_to_string(load.alloca_i->alloca_i.type), load.alloca_i->alloca_i.index, load.alignment);
-
-                } break;
-                case Instruction::Alloca:
-                {
-                    printf("%%%u = alloca %s, align %u\n", alloca_i.index, type_to_string(alloca_i.type), alloca_i.alignment);
-                } break;
-                case Instruction::Ret:
-                {
-                    char value_buffer[64];
-                    ret.symbol.to_string(value_buffer);
-                    printf("ret %s %s\n", type_to_string(ret.type), value_buffer);
-                } break;
-                case Instruction::Add:
-                {
-                    char left_buffer[64];
-                    char right_buffer[64];
-                    add.left.to_string(left_buffer);
-                    add.right.to_string(right_buffer);
-                    printf("%%%u = add %s %s, %s\n", add.index, type_to_string(add.type), left_buffer, right_buffer);
-                } break;
-                case Instruction::Sub:
-                {
-                    char left_buffer[64];
-                    char right_buffer[64];
-                    sub.left.to_string(left_buffer);
-                    sub.right.to_string(right_buffer);
-                    printf("%%%u = sub %s %s, %s\n", sub.index, type_to_string(sub.type), left_buffer, right_buffer);
-                } break;
-                case Instruction::Mul:
-                {
-                    char left_buffer[64];
-                    char right_buffer[64];
-                    mul.left.to_string(left_buffer);
-                    mul.right.to_string(right_buffer);
-                    printf("%%%u = mul %s %s, %s\n", mul.index, type_to_string(mul.type), left_buffer, right_buffer);
-                } break;
-                case Instruction::ICmp:
-                {
-                    char left_buffer[64];
-                    char right_buffer[64];
-                    icmp.left.to_string(left_buffer);
-                    icmp.right.to_string(right_buffer);
-                    printf("%%%u = icmp %s %s %s, %s\n", icmp.index, icmp.id_to_string(), type_to_string(icmp.type), left_buffer, right_buffer);
-                } break;
-                case Instruction::Br:
-                {
-                    // @Info: this means a conditional branch
-                    if (br.type)
-                    {
-                        char condition_buffer[64];
-                        char if_buffer[64];
-                        char else_buffer[64];
-                        br.condition.to_string(condition_buffer);
-                        br.if_label.to_string(if_buffer);
-                        br.else_label.to_string(else_buffer);
-                        printf("br i1 %s, %s, %s\n", condition_buffer, if_buffer, else_buffer);
-                    }
-                    // @Info: this means a straight jump
-                    else
-                    {
-                        char if_buffer[64];
-                        br.if_label.to_string(if_buffer);
-                        printf("br %s\n", if_buffer);
-
-                    }
-                } break;
-                case Instruction::RNS_PATCH:
-                {
-                    printf("RNS Patch\n");
-                } break;
-                default:
-                    RNS_NOT_IMPLEMENTED;
-                    break;
-            }
-        }
-
-
-        const char* id_to_string()
-        {
-            switch (id)
-            {
-#define rns_instr_id_to_string(_instr_) case Instruction:: ## _instr_: return #_instr_
-                rns_instr_id_to_string(Ret);
-                rns_instr_id_to_string(Br);
-                rns_instr_id_to_string(Switch_);
-                rns_instr_id_to_string(Indirectbr);
-                rns_instr_id_to_string(Invoke);
-                rns_instr_id_to_string(Resume);
-                rns_instr_id_to_string(Unreachable);
-                rns_instr_id_to_string(Cleanup_ret);
-                rns_instr_id_to_string(Catch_ret);
-                rns_instr_id_to_string(Catch_switch);
-                rns_instr_id_to_string(Call_br);
-                rns_instr_id_to_string(Fneg);
-                rns_instr_id_to_string(Add);
-                rns_instr_id_to_string(Fadd);
-                rns_instr_id_to_string(Sub);
-                rns_instr_id_to_string(Fsub);
-                rns_instr_id_to_string(Mul);
-                rns_instr_id_to_string(Fmul);
-                rns_instr_id_to_string(Udiv);
-                rns_instr_id_to_string(Sdiv);
-                rns_instr_id_to_string(Fdiv);
-                rns_instr_id_to_string(Urem);
-                rns_instr_id_to_string(Srem);
-                rns_instr_id_to_string(Frem);
-                rns_instr_id_to_string(Shl);
-                rns_instr_id_to_string(Lshr);
-                rns_instr_id_to_string(Ashr);
-                rns_instr_id_to_string(And);
-                rns_instr_id_to_string(Or);
-                rns_instr_id_to_string(Xor);
-                rns_instr_id_to_string(Alloca);
-                rns_instr_id_to_string(Load);
-                rns_instr_id_to_string(Store);
-                rns_instr_id_to_string(GetElementPtr);
-                rns_instr_id_to_string(Fence);
-                rns_instr_id_to_string(AtomicCmpXchg);
-                rns_instr_id_to_string(AtomicRMW);
-                rns_instr_id_to_string(Trunc);
-                rns_instr_id_to_string(ZExt);
-                rns_instr_id_to_string(SExt);
-                rns_instr_id_to_string(FPToUI);
-                rns_instr_id_to_string(FPToSI);
-                rns_instr_id_to_string(UIToFP);
-                rns_instr_id_to_string(SIToFP);
-                rns_instr_id_to_string(FPTrunc);
-                rns_instr_id_to_string(FPExt);
-                rns_instr_id_to_string(PtrToInt);
-                rns_instr_id_to_string(IntToPtr);
-                rns_instr_id_to_string(BitCast);
-                rns_instr_id_to_string(AddrSpaceCast);
-                rns_instr_id_to_string(CleanupPad);
-                rns_instr_id_to_string(CatchPad);
-                rns_instr_id_to_string(ICmp);
-                rns_instr_id_to_string(FCmp);
-                rns_instr_id_to_string(Phi);
-                rns_instr_id_to_string(Call);
-                rns_instr_id_to_string(Select);
-                rns_instr_id_to_string(UserOp1);
-                rns_instr_id_to_string(UserOp2);
-                rns_instr_id_to_string(VAArg);
-                rns_instr_id_to_string(ExtractElement);
-                rns_instr_id_to_string(InsertElement);
-                rns_instr_id_to_string(ShuffleVector);
-                rns_instr_id_to_string(ExtractValue);
-                rns_instr_id_to_string(InsertValue);
-                rns_instr_id_to_string(LandingPad);
-                rns_instr_id_to_string(Freeze);
-#undef rns_instr_id_to_string
-            }
-
-            return nullptr;
-        }
-    };
-
-    void instruction_to_string_for_value(InstructionInfo* instruction, char* buffer)
-    {
-        switch (instruction->id)
-        {
-            case Instruction::Alloca:
-            {
-                sprintf(buffer, "%%%u", instruction->alloca_i.index);
+                auto* integer_value = (APInt*)this;
+                printf("%llu", integer_value->value.eight_byte);
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
@@ -584,229 +358,300 @@ namespace LLVM
         }
     }
 
-    struct BasicBlock
+    struct Argument
     {
-        Symbol label;
-        Buffer<InstructionInfo> instructions;
-        BasicBlock* parent;
-        Node* ast_block;
+        Value value;
+    };
+
+    struct Module
+    {
+        Buffer<Function> functions;
+
+        static Module create(Allocator* allocator)
+        {
+            Module module = {
+                .functions = module.functions.create(allocator, 64),
+            };
+
+            return module;
+        }
     };
 
     struct Function
     {
-        BasicBlock entry_block;
-        Buffer<BasicBlock> basic_blocks;
-        LLVMID next_index;
-        u32 arg_count;
-        bool conditional_alloca;
-    };
+        Value value;
+        Buffer<BasicBlock*> basic_blocks;
+        Argument* arguments;
+        s64 arg_count;
+        // @TODO: symbol table
 
-    struct IRBuilder;
-    Symbol node_to_bytecode_value(Allocator* allocator, IRBuilder& ir_builder, TypeBuffer& type_declarations, FunctionDeclaration& ast_current_function, Node* node, Type* expected_type = nullptr);
-    struct IRBuilder
-    {
-        BasicBlock* current;
-        Function* current_fn;
-        Buffer<InstructionInfo*>* current_alloca_buffer;
-        // @TODO: Consider using another kind of data structure to speed up compilation
-        Buffer<PatchBlock>* current_patch_list;
-        Buffer<Symbol>* current_symbol_buffer;
-
-        InstructionInfo* append(InstructionInfo instruction)
+        static Function* create(Module* module, Type* function_type, /* @TODO: linkage*/ const char* name)
         {
-            auto* instr = current->instructions.append(instruction);
-            //instr->print(get_block_label(current));
-            return instr;
-        }
-
-        void create_alloca(Node* node)
-        {
-            assert(node->type == NodeType::VarDecl);
-            assert(node->var_decl.type);
-            Alloca alloca_i = {
-                .type = node->var_decl.type,
-                .index = current_fn->next_index++,
-                .count = 1,
-                .alignment = 4,
+            auto* function = module->functions.allocate();
+            *function = {
+                .value = {
+                    .id = IDManager::append(name),
+                    .type = function_type,
+                },
+                // @TODO: basic blocks, args...
             };
-            auto* alloca_i_ptr = append({ .id = Instruction::Alloca, .alloca_i = alloca_i, });
-            current_alloca_buffer->append(alloca_i_ptr);
-            append({ .type = Symbol::ID::Index, .result = {.index = alloca_i.index } });
+            return function;
         }
 
-        void create_store(Node* var_node, Symbol assignment_value, FunctionDeclaration& ast_current_function)
+        static FunctionType* get_type(FunctionType* function_type)
         {
-            assert(var_node);
-            assert(var_node->type == NodeType::VarDecl);
-            assert(var_node->var_decl.type);
-            InstructionInfo instruction;
-            instruction.id = Instruction::Store;
-            instruction.store.type = var_node->var_decl.type;
-            instruction.store.symbol = assignment_value;
-            instruction.store.alloca_i = get_alloca(var_node, ast_current_function);
-            assert(instruction.store.alloca_i);
-
-            instruction.store.alignment = 4;
-
-            append(instruction);
+            // @TODO: to be implemented in the future
+            return function_type;
         }
 
-        void encode_assign(Allocator* allocator, TypeBuffer& type_declarations, FunctionDeclaration& ast_current_function, Node* node)
+        static FunctionType* get_type(Type* return_type, Slice<Type*> types, bool var_args)
         {
-            assert(node->type == NodeType::BinOp);
-            assert(node->bin_op.op == BinOp::Assign);
-
-            auto* ast_assignment_value = node->bin_op.right;
-            auto* var_expr_node = node->bin_op.left;
-            assert(var_expr_node);
-            assert(var_expr_node->type == NodeType::VarExpr);
-            auto* var_decl_node = var_expr_node->var_expr.mentioned;
-            assert(var_decl_node);
-            assert(var_decl_node->type == NodeType::VarDecl);
-            auto* var_type = var_decl_node->var_decl.type;
-            assert(var_type);
-            auto assignment_value = node_to_bytecode_value(allocator, *this, type_declarations, ast_current_function, ast_assignment_value, var_type);
-
-            create_store(var_decl_node, assignment_value, ast_current_function);
-        }
-
-        InstructionInfo* get_alloca(Node* node, FunctionDeclaration& ast_current_function)
-        {
-            return (*current_alloca_buffer)[ast_current_function.variables.get_id_if_ref_buffer(node) + current_fn->conditional_alloca];
-        }
-
-        InstructionInfo* get_conditional_alloca()
-        {
-            if (current_fn->conditional_alloca)
-            {
-                return (*current_alloca_buffer)[0];
-            }
+            RNS_NOT_IMPLEMENTED;
             return nullptr;
         }
+    };
 
-        void append(Symbol symbol)
-        {
-            current_symbol_buffer->append(symbol);
-        }
+    struct BasicBlock
+    {
+        Value value;
+        Function* parent;
+        Buffer<Instruction*> instructions;
+        u32 use_count;
 
-        BasicBlock* append_basic_block(Allocator* allocator, Node* ast_scope_block = nullptr)
+        static BasicBlock create(const char* name = nullptr)
         {
-            auto label_index = current_fn->next_index++;
-            if (label_index == 13)
-            {
-                int k = 123213;
-            }
-            auto* new_one = current_fn->basic_blocks.allocate();
-            new_one->parent = current;
-            current = new_one;
-            current->label = {
-                .type = Symbol::ID::Label,
-                .result = {.index = label_index }
+            // @TODO: consider dealing with inserting the block in the middle of the array
+            BasicBlock new_basic_block = {
+                .value = Value::New(Type::get_label(), name),
             };
-            current->instructions = current->instructions.create(allocator, 64);
-            current->ast_block = ast_scope_block;
 
-            return new_one;
+            return new_basic_block;
         }
 
-        void append_branch(BasicBlock* origin, BasicBlock* destination)
+        void print(SlotTracker& slot_tracker)
         {
-            auto* original_scope = current;
-            current = origin;
-
-            InstructionInfo br_instruction = {
-                .id = Instruction::Br,
-                .br = {
-                    .if_label = destination->label,
-                },
-            };
-            append(br_instruction);
-            current = original_scope;
-        }
-
-        void append_conditional_branch(Symbol condition, BasicBlock* origin_block, BasicBlock* if_block, BasicBlock* else_block, TypeBuffer& type_declarations)
-        {
-            auto* original_scope = current;
-
-            current = origin_block;
-            InstructionInfo br_instruction = {
-                .id = Instruction::Br,
-                .br = {
-                    .type = &type_declarations[(u32)NativeTypeID::U1],
-                    .condition = condition,
-                    .if_label = if_block->label,
-                    .else_label = else_block->label,
-                },
-            };
-            append(br_instruction);
-            current = original_scope;
-        }
-
-        BasicBlock* change_block(BasicBlock* block)
-        {
-            assert(block != current);
-            auto* current_block = current;
-            current = block;
-            return current_block;
-        }
-
-        void print_patch(PatchBlock& patch)
-        {
-            printf("jump patch:\n");
-            printf("\ttype: ");
-            switch (patch.type)
+            if (parent->basic_blocks[0] == this)
             {
-                case JumpType::Direct:
-                {
-                    printf("direct\n");
-                } break;
-                default:
-                    RNS_NOT_IMPLEMENTED;
-                    break;
-            }
-            printf("\tkeyword: ");
-            switch (patch.keyword)
-            {
-                case HighLevelType::Break:
-                {
-                    printf("break\n");
-                } break;
-                case HighLevelType::NoElse:
-                {
-                    printf("noelse\n");
-                } break;
-                default:
-                    RNS_NOT_IMPLEMENTED;
-                    break;
-            }
-            printf("\tcondition: %%%u\n", patch.condition.result.index);
-            if (patch.ir_true_block)
-            {
-                printf("\tfrom block %u, to block %u\n", patch.ir_jump_from->label.result.index, patch.ir_true_block->label.result.index);
+                printf("Entry block:\n");
             }
             else
             {
-                printf("\tfrom block %u, to block %u\n", patch.ir_jump_from->label.result.index, 0);
+                auto id = slot_tracker.new_id(this);
+                printf("%llu:\n", id);
             }
-        }
-
-        void add_patch(PatchBlock& patch)
-        {
-            printf("Adding to the list ");
-            print_patch(patch);
-            current_patch_list->append(patch);
-        }
-
-        void print_block(BasicBlock* basic_block)
-        {
-#if 1
-            for (auto& instr : basic_block->instructions)
-            {
-                instr.print(basic_block->label);
-            }
-#endif
         }
     };
+
+    struct Builder
+    {
+        BasicBlock* current;
+        Function* function;
+        /// <summary> Guarantee pointer stability for members
+        BasicBlockBuffer* basic_block_buffer;
+        InstructionBuffer* instruction_buffer;
+        /// </summary>
+        s64 next_alloca_index;
+
+        // @TODO: guarantee pointer stability
+        Instruction* create_alloca(Type* type, Value* array_size = nullptr, const char* name = nullptr)
+        {
+            Instruction i = {
+                .base {
+                    .value = Value::New(),
+                    .id = InstructionID::Alloca,
+                },
+                .alloca_i = {
+                    .allocated_type = PointerType::get(type),
+                }
+            };
+
+            return insert_alloca(i);
+        }
+
+        Instruction* create_store(Value* value, Value* ptr, bool is_volatile = false)
+        {
+            Instruction i = {
+                .base = {
+                    .value = Value::New(),
+                    .id = InstructionID::Store,
+                },
+                .operands = { value, ptr },
+                .operand_count = 2,
+            };
+
+            return insert_at_end(i);
+        }
+
+        Instruction* create_load(Type* type, Value* value, bool is_volatile = false, const char* name = nullptr)
+        {
+            Instruction i = {
+                .base = {
+                    .value = Value::New(type),
+                    .id = InstructionID::Load,
+                },
+                .operands = { value},
+                .operand_count = 1,
+            };
+
+            return insert_at_end(i);
+        }
+
+        void append_to_function(BasicBlock* block)
+        {
+            assert(function);
+
+            function->basic_blocks.append(block);
+            block->parent = function;
+        }
+
+        BasicBlock* set_block(BasicBlock* block)
+        {
+            assert(current != block);
+            auto* previous = current;
+            current = block;
+            return previous;
+        }
+
+        BasicBlock* create_block(Allocator* allocator, const char* name = nullptr)
+        {
+            BasicBlock* basic_block = basic_block_buffer->append(BasicBlock::create(name));
+            // @TODO: this should change
+            basic_block->instructions = basic_block->instructions.create(allocator, 64);
+            return basic_block;
+        }
+
+        Instruction* create_br(BasicBlock* dst_block)
+        {
+            Instruction i = {
+                .base = {
+                    .value = Value::New(),
+                    .id = InstructionID::Br,
+                },
+                .operands = { reinterpret_cast<Value*>(dst_block) },
+                .operand_count = 1,
+            };
+
+            dst_block->use_count++;
+            return insert_at_end(i);
+        }
+        
+        Instruction* create_conditional_br(BasicBlock* true_block, BasicBlock* else_block, Value* condition)
+        {
+            Instruction i = {
+                .base = {
+                    .value = Value::New(),
+                    .id = InstructionID::Br,
+                },
+                .operands = { reinterpret_cast<Value*>(true_block),  reinterpret_cast<Value*>(true_block), condition },
+                .operand_count = 3,
+            };
+            true_block->use_count++;
+            else_block->use_count++;
+
+            return insert_at_end(i);
+        }
+
+        Instruction* create_icmp(CmpType compare_type, Value* left, Value* right, const char* name = nullptr)
+        {
+            Instruction i = {
+                .base = {
+                    .value = Value::New(),
+                    .id = InstructionID::ICmp,
+                },
+                .operands = { left, right },
+                .operand_count = 2,
+                .compare = { .type = compare_type }
+            };
+
+            return insert_at_end(i);
+        }
+
+        Instruction* create_add(Value* left, Value* right, const char* name = nullptr)
+        {
+            Instruction i = {
+                .base = {
+                    .value = Value::New(),
+                    .id = InstructionID::Add,
+                },
+                .operands = { left, right },
+                .operand_count = 2,
+            };
+
+            return insert_at_end(i);
+        }
+
+        Instruction* create_sub(Value* left, Value* right, const char* name = nullptr)
+        {
+            Instruction i = {
+                .base = {
+                    .value = Value::New(),
+                    .id = InstructionID::Sub,
+                },
+                .operands = { left, right },
+                .operand_count = 2,
+            };
+
+            return insert_at_end(i);
+        }
+
+        Instruction* create_mul(Value* left, Value* right, const char* name = nullptr)
+        {
+            Instruction i = {
+                .base = {
+                    .value = Value::New(),
+                    .id = InstructionID::Mul,
+                },
+                .operands = { left, right },
+                .operand_count = 2,
+            };
+
+            return insert_at_end(i);
+        }
+
+        Instruction* create_ret(Value* value)
+        {
+            Instruction i = {
+                .base = {
+                    .value = Value::New(),
+                    .id = InstructionID::Ret,
+                },
+                .operands = { value },
+                .operand_count = 1,
+            };
+
+            return insert_at_end(i);
+        }
+        Instruction* create_ret_void()
+        {
+            RNS_NOT_IMPLEMENTED;
+            return nullptr;
+        }
+
+    private:
+        Instruction* insert_alloca(Instruction alloca_instruction)
+        {
+            assert(function);
+            assert(instruction_buffer);
+
+            auto* i = instruction_buffer->append(alloca_instruction);
+            auto* entry_block = function->basic_blocks[0];
+            entry_block->instructions.insert_at(i, next_alloca_index++);
+            i->base.parent = entry_block;
+            return i;
+        }
+
+        inline Instruction* insert_at_end(Instruction instruction)
+        {
+            assert(function);
+            assert(instruction_buffer);
+            assert(current);
+            auto* i = instruction_buffer->append(instruction);
+            auto* result = current->instructions.append(i);
+            i->base.parent = current;
+            return i;
+        }
+    };
+
 
     bool introspect_for_conditional_allocas(Node* scope)
     {
@@ -844,514 +689,274 @@ namespace LLVM
         return false;
     }
 
-    // @TODO: Add typechecking again <Type, Symbol>
-    Symbol node_to_bytecode_value(Allocator* allocator, IRBuilder& ir_builder, TypeBuffer& type_declarations, FunctionDeclaration& current_function, Node* node, Type* expected_type)
+    void emit_jump(Allocator* allocator, Builder& builder, BasicBlock* dst_block)
+    {
+        builder.create_br(dst_block);
+        auto* new_block = builder.create_block(allocator);
+        builder.append_to_function(new_block);
+        builder.set_block(new_block);
+    }
+
+    Value* do_node(Allocator* allocator, Builder& builder, Node* node, Type* expected_type = nullptr)
     {
         switch (node->type)
         {
-            case NodeType::IntLit:
+            case NodeType::Block:
             {
-                Symbol result = {
-                    .type = Symbol::ID::Constant,
-                    .result = {
-                        .constant = {
-                            .id = ConstantID::Int,
-                            .integer = node->int_lit,
-                        }
-                    }
-                };
-                return result;
-            } break;
-            // @TODO: this should generate a load
-            case NodeType::VarExpr:
-            {
-                auto* alloca_elem = ir_builder.get_alloca(node->var_expr.mentioned, current_function);
-                assert(alloca_elem);
+                assert(node->block.type != Block::Type::Function);
 
-                InstructionInfo load_instruction = {
-                    .id = Instruction::Load,
-                    .load = {
-                        .type = alloca_elem->alloca_i.type,
-                        .alloca_i = alloca_elem,
-                        .index = ir_builder.current_fn->next_index++,
-                        .alignment = 4,
-                    }
-                };
-                ir_builder.append(load_instruction);
-
-                Symbol symbol = {
-                    .type = Symbol::ID::Index,
-                    .result = { .index = load_instruction.load.index},
-                };
-                ir_builder.append(symbol);
-                return symbol;
-            } break;
-            case NodeType::BinOp:
-            {
-                auto* left_node = node->bin_op.left;
-                auto* right_node = node->bin_op.right;
-
-                auto left_symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, left_node, expected_type);
-                auto right_symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, current_function, right_node, expected_type);
-
-                switch (node->bin_op.op)
+                for (auto* st_node : node->block.statements)
                 {
-                    case BinOp::Plus:
-                    {
-                        InstructionInfo add_instruction = {
-                            .id = Instruction::Add,
-                            .add = {
-                                .type = expected_type,
-                                .left = left_symbol,
-                                .right = right_symbol,
-                                .index = ir_builder.current_fn->next_index++,
-                            }
-                        };
-                        ir_builder.append(add_instruction);
-
-                        Symbol result = {
-                            .type = Symbol::ID::Index,
-                            .result = {
-                                .index = add_instruction.add.index,
-                            }
-                        };
-                        ir_builder.append(result);
-                        return result;
-                    } break;
-                    case BinOp::Minus:
-                    {
-                        InstructionInfo sub_instruction = {
-                            .id = Instruction::Sub,
-                            .sub = {
-                                .type = expected_type,
-                                .left = left_symbol,
-                                .right = right_symbol,
-                                .index = ir_builder.current_fn->next_index++,
-                            }
-                        };
-                        ir_builder.append(sub_instruction);
-
-                        Symbol result = {
-                            .type = Symbol::ID::Index,
-                            .result = {
-                                .index = sub_instruction.add.index,
-                            }
-                        };
-                        ir_builder.append(result);
-                        return result;
-                    } break;
-                    case BinOp::Mul:
-                    {
-                        InstructionInfo mul_instruction = {
-                            .id = Instruction::Mul,
-                            .mul = {
-                                .type = expected_type,
-                                .left = left_symbol,
-                                .right = right_symbol,
-                                .index = ir_builder.current_fn->next_index++,
-                            }
-                        };
-                        ir_builder.append(mul_instruction);
-
-                        Symbol result = {
-                            .type = Symbol::ID::Index,
-                            .result = {
-                                .index = mul_instruction.mul.index,
-                            }
-                        };
-                        ir_builder.append(result);
-                        return result;
-                    } break;
-                    case BinOp::Cmp_Equal:
-                    {
-                        InstructionInfo icmp_instruction = {
-                            .id = Instruction::ICmp,
-                            .icmp = {
-                                .id = ICmp::ID::Equal,
-                                // @TODO: remove hardcoded value
-                                .type = &type_declarations[static_cast<u32>(NativeTypeID::S32)],
-                                .left = left_symbol,
-                                .right = right_symbol,
-                                .index = ir_builder.current_fn->next_index++,
-                            },
-                        };
-
-                        ir_builder.append(icmp_instruction);
-
-                        Symbol result = {
-                            .type = Symbol::ID::Index,
-                            .result = {.index = icmp_instruction.icmp.index},
-                        };
-                        ir_builder.append(result);
-
-                        return result;
-                    } break;
-                    case BinOp::Cmp_LessThan:
-                    {
-                        InstructionInfo icmp_instruction = {
-                            .id = Instruction::ICmp,
-                            .icmp = {
-                                .id = ICmp::ID::SignedLessThan, // @TODO: remove signed value and compute based on the operands
-                                // @TODO: remove hardcoded value
-                                .type = &type_declarations[static_cast<u32>(NativeTypeID::S32)],
-                                .left = left_symbol,
-                                .right = right_symbol,
-                                .index = ir_builder.current_fn->next_index++,
-                            },
-                        };
-
-                        ir_builder.append(icmp_instruction);
-
-                        Symbol result = {
-                            .type = Symbol::ID::Index,
-                            .result = {.index = icmp_instruction.icmp.index},
-                        };
-                        ir_builder.append(result);
-
-                        return result;
-                    } break;
-                    case BinOp::Cmp_GreaterThan:
-                    {
-                        InstructionInfo icmp_instruction = {
-                            .id = Instruction::ICmp,
-                            .icmp = {
-                                .id = ICmp::ID::SignedGreaterThan, // @TODO: remove signed value and compute based on the operands
-                                // @TODO: remove hardcoded value
-                                .type = &type_declarations[static_cast<u32>(NativeTypeID::S32)],
-                                .left = left_symbol,
-                                .right = right_symbol,
-                                .index = ir_builder.current_fn->next_index++,
-                            },
-                        };
-
-                        ir_builder.append(icmp_instruction);
-
-                        Symbol result = {
-                            .type = Symbol::ID::Index,
-                            .result = {.index = icmp_instruction.icmp.index},
-                        };
-                        ir_builder.append(result);
-
-                        return result;
-                    }
-                    default:
-                        RNS_NOT_IMPLEMENTED;
-                        break;
-                }
-            } break;
-            default:
-                RNS_NOT_IMPLEMENTED;
-                break;
-        }
-        return {};
-    }
-
-    void work_block(Allocator* allocator, IRBuilder& ir_builder, TypeBuffer& type_declarations, FunctionDeclaration& ast_current_function, Node* ast_scope, BasicBlock* block_to_work)
-    {
-        for (auto* st_node : ast_scope->block.statements)
-        {
-            switch (st_node->type)
-            {
-                case NodeType::Break:
-                {
-                    auto* scope_to_jump_to = st_node->break_.block;
-                    assert(scope_to_jump_to);
-
-                    while (scope_to_jump_to)
-                    {
-                        if (scope_to_jump_to->block.type == Block::Type::LoopBody)
-                        {
-                            break;
-                        }
-
-                        scope_to_jump_to = scope_to_jump_to->parent;
-                    }
-
-                    assert(scope_to_jump_to);
-                    assert(ir_builder.current == block_to_work);
-
-                    PatchBlock patch = {
-                        .type = JumpType::Direct,
-                        .keyword = HighLevelType::Break,
-                        .ir_jump_from = ir_builder.current,
-                        .ast_true_jump = scope_to_jump_to,
-                        .ir_parent = block_to_work,
-                    };
-                    ir_builder.add_patch(patch);
-                } break;
-                case NodeType::BinOp:
-                {
-                    assert(st_node->bin_op.op == BinOp::Assign);
-                    ir_builder.encode_assign(allocator, type_declarations, ast_current_function, st_node);
-                } break;
-            case NodeType::VarDecl:
-            {
-                auto* ast_assignment_value = st_node->var_decl.value;
-                auto* var_type = st_node->var_decl.type;
-                assert(var_type);
-                if (ast_assignment_value)
-                {
-                    auto assignment_value = node_to_bytecode_value(allocator, ir_builder, type_declarations, ast_current_function, ast_assignment_value, var_type);
-                    ir_builder.create_store(st_node, assignment_value, ast_current_function);
-                }
-            } break;
-            case NodeType::Ret:
-            {
-                // @TODO: change this
-                if (true)
-                {
-                    auto* ret_expr = st_node->ret.expr;
-                    auto* fn_type = ast_current_function.type;
-                    assert(fn_type);
-                    auto* function_return_type = fn_type->function_type.ret_type;
-                    assert(function_return_type);
-                    InstructionInfo instruction;
-                    instruction.id = Instruction::Ret;
-                    if (ret_expr)
-                    {
-                        if (ret_expr->type == NodeType::VarExpr)
-                        {
-                            auto* var_decl = ret_expr->var_expr.mentioned;
-                            assert(var_decl);
-                            assert(var_decl->type == NodeType::VarDecl);
-                            auto* return_expression_type = var_decl->var_decl.type;
-                            assert(return_expression_type == function_return_type);
-                        }
-                        auto symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, ast_current_function, ret_expr, function_return_type);
-                        instruction.ret = {
-                            .type = ast_current_function.type->function_type.ret_type,
-                            .symbol = symbol,
-                        };
-                        ir_builder.append(instruction);
-                    }
-                    else
-                    {
-                        assert(function_return_type->id == TypeID::VoidType);
-                    }
-                }
-                else
-                {
-                    auto* ret_type = ast_current_function.type->function_type.ret_type;
-                    assert(ret_type);
-
-                    if (ret_type->id != TypeID::VoidType)
-                    {
-                        Node* ret_expr = st_node->ret.expr;
-                        assert(ret_expr);
-
-                        auto ret_symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, ast_current_function, ret_expr, ret_type);
-
-                        auto* conditional_alloca = ir_builder.get_conditional_alloca();
-                        assert(conditional_alloca);
-
-                        InstructionInfo store_conditional_alloca = {
-                            .id = Instruction::Store,
-                            .store = {
-                                .type = ret_type,
-                                .symbol = ret_symbol,
-                                .alloca_i = conditional_alloca,
-                                .alignment = 4,
-                            }
-                        };
-
-                        ir_builder.append(store_conditional_alloca);
-                    }
+                    do_node(allocator, builder, st_node);
                 }
             } break;
             case NodeType::Conditional:
             {
-                auto* current_scope = ir_builder.current;
-                auto* condition = st_node->conditional.condition;
-                assert(condition);
-                // @Info: boolean
-                auto* br_type = &type_declarations[static_cast<u32>(NativeTypeID::U1)];
-                auto condition_symbol = node_to_bytecode_value(allocator, ir_builder, type_declarations, ast_current_function, condition, br_type);
+                auto* ast_condition = node->conditional.condition;
+                auto* ast_if_block = node->conditional.if_block;
+                auto* ast_else_block = node->conditional.else_block;
 
-                auto* ast_if_block = st_node->conditional.if_block;
-                assert(ast_if_block);
-                assert(ast_if_block->block.type == Block::Type::ConditionalBlock);
-                auto* if_basic_block = ir_builder.append_basic_block(allocator, ast_if_block);
-                work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_if_block, if_basic_block);
-
-                auto* ast_else_block = st_node->conditional.else_block;
-                // Info: if there's an else block, it generates around that. Else it's an empty block (an if-end block, to be clear)
-                BasicBlock* next_basic_block = ir_builder.append_basic_block(allocator, ast_else_block); 
+                auto* exit_block = builder.create_block(allocator);
+                auto* if_block = builder.create_block(allocator);
+                BasicBlock* else_block = exit_block;
                 if (ast_else_block)
                 {
-                    work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_else_block, next_basic_block);
+                    else_block = builder.create_block(allocator);
+                }
+
+                node->conditional.exit_block = exit_block;
+
+                auto* condition = do_node(allocator, builder, ast_condition, Type::get_bool_type());
+                assert(condition);
+
+                auto exit_block_in_use = true;
+                if (if_block != else_block)
+                {
+                    builder.create_conditional_br(if_block, else_block, condition);
                 }
                 else
                 {
-                    bool do_patch = true;
-                    for (auto& patch : *ir_builder.current_patch_list)
+                    if ((exit_block_in_use = exit_block->use_count))
                     {
-                        if (patch.ast_true_jump == st_node)
-                        {
-                            do_patch = false;
-                            break;
-                        }
+                        builder.create_br(exit_block);
                     }
+                }
 
-                    if (do_patch)
-                    {
-                        // generate some kind of patch here
-                        PatchBlock no_else_patch = {
-                            .type = JumpType::Direct,
-                            .keyword = HighLevelType::NoElse,
-                            .ir_jump_from = next_basic_block,
-                            .ast_true_jump = st_node->parent,
-                            .ast_parent_node = st_node->parent,
-                            .ir_parent = next_basic_block->parent,
-                        };
-                        ir_builder.add_patch(no_else_patch);
-                    }
-                }
-                for (auto& patch : *ir_builder.current_patch_list)
+                if (if_block != exit_block)
                 {
-                    if (!patch.done)
-                    {
-                        assert(patch.type == JumpType::Direct);
-                        if (patch.ast_true_jump == st_node)
-                        {
-                            if (ast_else_block)
-                            {
-                                patch.ir_true_block = next_basic_block;
-                                ir_builder.append_branch(patch.ir_jump_from, patch.ir_true_block);
-                                patch.done = true;
-                            }
-                            else
-                            {
-                                assert(patch.ast_true_jump->parent);
-                                patch.ast_true_jump = patch.ast_true_jump->parent;
-                            }
-                        }
-                        else if (patch.ast_false_jump == st_node)
-                        {
-                            RNS_NOT_IMPLEMENTED;
-                        }
-                    }
+                    builder.append_to_function(if_block);
+                    do_node(allocator, builder, ast_if_block);
+
+                    builder.create_br(exit_block);
                 }
-                ir_builder.append_conditional_branch(condition_symbol, current_scope, if_basic_block, next_basic_block, type_declarations);
+
+                if (else_block != exit_block)
+                {
+                    builder.append_to_function(else_block);
+                    do_node(allocator, builder, ast_else_block);
+
+                    builder.create_br(exit_block);
+                }
+
+                if (exit_block_in_use)
+                {
+                    builder.append_to_function(exit_block);
+                }
             } break;
             case NodeType::Loop:
             {
-                auto* ast_loop_prefix = st_node->loop.prefix;
-                auto* ast_loop_body = st_node->loop.body;
-                auto* ast_loop_postfix = st_node->loop.postfix;
+                auto* ast_loop_prefix = node->loop.prefix;
+                auto* ast_loop_body = node->loop.body;
+                auto* ast_loop_postfix = node->loop.postfix;
 
-                auto* loop_parent_basic_block = ir_builder.current;
+                auto loop_prefix_block = builder.create_block(allocator);
+                auto loop_body_block = builder.create_block(allocator);
+                auto loop_postfix_block = builder.create_block(allocator);
+                auto loop_end_block = builder.create_block(allocator);
 
-                auto* loop_prefix_basic_block = ir_builder.append_basic_block(allocator, ast_loop_prefix);
-                ir_builder.append_branch(loop_parent_basic_block, loop_prefix_basic_block);
+                auto& loop_continue_block = loop_postfix_block;
+                node->loop.continue_block = loop_continue_block;
+                node->loop.exit_block = loop_end_block;
 
-                // @Info: this is supposed to be the loop condition. @TODO: come up with a better name
+                builder.create_br(loop_prefix_block);
+                builder.append_to_function(loop_prefix_block);
+
                 assert(ast_loop_prefix->block.statements.len == 1);
-                auto* loop_condition = ast_loop_prefix->block.statements[0];
+                auto* ast_condition = ast_loop_prefix->block.statements[0];
+                auto* condition = do_node(allocator, builder, ast_condition, Type::get_bool_type());
+                assert(condition);
 
-                Symbol cmp_result = node_to_bytecode_value(allocator, ir_builder, type_declarations, ast_current_function, loop_condition, &type_declarations[(u32)NativeTypeID::U1]);
+                builder.create_conditional_br(loop_body_block, loop_end_block, condition);
+                builder.append_to_function(loop_body_block);
 
-                bool returned = false;
-                bool jumps_to_patch = false;
-                auto* loop_body_basic_block = ir_builder.append_basic_block(allocator, ast_loop_body);
-                work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_loop_body, loop_body_basic_block);
-                auto* body_current_scope = ir_builder.current;
-                
-                ir_builder.change_block(loop_parent_basic_block);
-                auto* loop_postfix_basic_block = ir_builder.append_basic_block(allocator, ast_loop_postfix);
-                work_block(allocator, ir_builder, type_declarations, ast_current_function, ast_loop_postfix, loop_postfix_basic_block);
+                do_node(allocator, builder, ast_loop_body);
 
-                ir_builder.change_block(loop_parent_basic_block);
-                auto* loop_end_basic_block = ir_builder.append_basic_block(allocator);
-                ir_builder.change_block(loop_parent_basic_block);
+                builder.create_br(loop_postfix_block);
 
-                // @TODO: make conditional branch
-                ir_builder.append_conditional_branch(cmp_result, loop_prefix_basic_block, loop_body_basic_block, loop_end_basic_block, type_declarations);
-                ir_builder.append_branch(body_current_scope, loop_postfix_basic_block);
-                ir_builder.append_branch(loop_postfix_basic_block, loop_prefix_basic_block);
+                builder.append_to_function(loop_postfix_block);
+                do_node(allocator, builder, ast_loop_postfix);
 
-                for (auto& patch : *ir_builder.current_patch_list)
+                builder.create_br(loop_prefix_block);
+                builder.append_to_function(loop_end_block);
+            } break;
+            case NodeType::Break:
+            {
+                auto* ast_jump_target = node->break_.target;
+                assert(ast_jump_target->type == NodeType::Loop);
+                auto* jump_target = reinterpret_cast<BasicBlock*>(ast_jump_target->loop.exit_block);
+                assert(jump_target);
+
+                emit_jump(allocator, builder, jump_target);
+            } break;
+            case NodeType::VarDecl:
+            {
+                auto* type = node->var_decl.type;
+                auto* value = node->var_decl.value;
+                auto* var_alloca = builder.create_alloca(type);
+                node->var_decl.backend_ref = var_alloca;
+                if (value)
                 {
-                    if (!patch.done)
-                    {
-                        if (patch.ast_true_jump == ast_loop_body)
-                        {
-                            assert(patch.type == JumpType::Direct);
-                            switch (patch.keyword)
-                            {
-                                case HighLevelType::Break:
-                                {
-                                    patch.ir_true_block = loop_end_basic_block;
-                                    ir_builder.append_branch(patch.ir_jump_from, patch.ir_true_block);
-                                    patch.done = true;
-                                } break;
-                                case HighLevelType::NoElse:
-                                {
-                                    patch.ir_true_block = body_current_scope;
-                                    ir_builder.append_branch(patch.ir_jump_from, patch.ir_true_block);
-                                    patch.done = true;
-                                } break;
-                                default:
-                                    RNS_NOT_IMPLEMENTED;
-                                    break;
-                            }
-                        }
-                        else if (patch.ast_false_jump == ast_loop_body)
-                        {
-                            RNS_NOT_IMPLEMENTED;
-                        }
-                        // @TODO: watch out, this may be dangerous
-#if 0
-                        else
-                        {
-                            RNS_NOT_IMPLEMENTED;
-                        }
-#endif
-                    }
+                    assert(type);
+                    auto* expression = do_node(allocator, builder, value, type);
+                    assert(expression);
+                    builder.create_store(expression, reinterpret_cast<Value*>(var_alloca), false);
                 }
+            } break;
+            case NodeType::IntLit:
+            {
+                auto* result = APInt::get(allocator, Type::get_integer_type(32, true), node->int_lit.lit, node->int_lit.is_signed);
+                assert(result);
+                return reinterpret_cast<Value*>(result);
+            }
+            case NodeType::BinOp:
+            {
+                auto* ast_left = node->bin_op.left;
+                auto* ast_right = node->bin_op.right;
+                auto binary_op_type = node->bin_op.op;
+                assert(ast_left);
+                assert(ast_right);
 
-                ir_builder.change_block(loop_end_basic_block);
+                if (binary_op_type == BinOp::Assign)
+                {
+                    assert(ast_left->type == NodeType::VarExpr);
+                    auto* var_decl = ast_left->var_expr.mentioned;
+                    assert(var_decl);
+                    auto* alloca_value = var_decl->var_decl.backend_ref;
+                    auto* var_type = var_decl->var_decl.type;
+
+                    auto* right_value = do_node(allocator, builder, ast_right, var_type);
+                    assert(right_value);
+                    builder.create_store(right_value, reinterpret_cast<Value*>(alloca_value));
+                }
+                else
+                {
+                    auto* left = do_node(allocator, builder, ast_left);
+                    auto* right = do_node(allocator, builder, ast_right);
+                    assert(left);
+                    assert(right);
+
+                    Instruction* binary_op_instruction;
+                    switch (binary_op_type)
+                    {
+                        case BinOp::Cmp_LessThan:
+                        {
+                            binary_op_instruction = builder.create_icmp(CmpType::ICMP_SLT, left, right);
+                        } break;
+                        case BinOp::Cmp_GreaterThan:
+                        {
+                            binary_op_instruction = builder.create_icmp(CmpType::ICMP_SGT, left, right);
+                        } break;
+                        case BinOp::Cmp_Equal:
+                        {
+                            binary_op_instruction = builder.create_icmp(CmpType::ICMP_EQ, left, right);
+                        } break;
+                        case BinOp::Plus:
+                        {
+                            binary_op_instruction = builder.create_add(left, right);
+                        } break;
+                        case BinOp::Minus:
+                        {
+                            binary_op_instruction = builder.create_sub(left, right);
+                        } break;
+                        case BinOp::Mul:
+                        {
+                            binary_op_instruction = builder.create_mul(left, right);
+                        } break;
+                        default:
+                            RNS_NOT_IMPLEMENTED;
+                            break;
+                    }
+
+                    return reinterpret_cast<Value*>(binary_op_instruction);
+                }
+            } break;
+            case NodeType::VarExpr:
+            {
+                auto* var_decl = node->var_expr.mentioned;
+                assert(var_decl);
+                auto* alloca_ptr = var_decl->var_decl.backend_ref;
+                assert(alloca_ptr);
+                Instruction* var_alloca = reinterpret_cast<Instruction*>(alloca_ptr);
+
+                auto* type = var_decl->var_decl.type;
+                assert(type);
+                return reinterpret_cast<Value*>(builder.create_load(type, reinterpret_cast<Value*>(var_alloca)));
+            } break;
+            case NodeType::Ret:
+            {
+                // @TODO: deal with conditional alloca
+                auto* ast_return_expression = node->ret.expr;
+                // @TODO: void
+                assert(ast_return_expression);
+                // @TODO: check type
+                auto* ret_value = do_node(allocator, builder, ast_return_expression);
+                builder.create_ret(ret_value);
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
                 break;
-            }
         }
+
+        return nullptr;
     }
 
-    void encode(Compiler& compiler, NodeBuffer& node_buffer, FunctionTypeBuffer& function_type_declarations, TypeBuffer& type_declarations, FunctionDeclarationBuffer& function_declarations)
+    void encode(Compiler& compiler, NodeBuffer& node_buffer, FunctionTypeBuffer& function_type_declarations, FunctionDeclarationBuffer& function_declarations)
     {
         RNS_PROFILE_FUNCTION();
         compiler.subsystem = Compiler::Subsystem::IR;
         auto llvm_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(50));
         assert(function_declarations.len == 1);
-        IRBuilder ir_builder = {};
+        IDManager::init(&llvm_allocator, 1024, 1024 * 16);
+        Module module = module.create(&llvm_allocator);
+        BasicBlockBuffer basic_block_buffer = basic_block_buffer.create(&llvm_allocator, 1024);
+        InstructionBuffer instruction_buffer = instruction_buffer.create(&llvm_allocator, 1024 * 16);
 
         for (auto& ast_current_function : function_declarations)
         {
-            Function llvm_function = {
-                .basic_blocks = Buffer<BasicBlock>::create(&llvm_allocator, 64),
-            };
+            Builder builder = {};
+            builder.basic_block_buffer = &basic_block_buffer;
+            builder.instruction_buffer = &instruction_buffer;
+            auto* function = Function::create(&module, &ast_current_function->function.type->type_expr, "main");
+            builder.function = function;
 
-            auto arg_count = 0;
-            for (auto* var_node : ast_current_function->function.variables)
-            {
-                if (var_node->var_decl.is_fn_arg)
-                {
-                    arg_count++;
-                    continue;
-                }
-                break;
-            }
+            auto* ast_main_scope = ast_current_function->function.scope_blocks[0];
+            auto& ast_main_scope_statements = ast_main_scope->block.statements;
+            builder.function->basic_blocks = builder.function->basic_blocks.create(&llvm_allocator, 128);
 
-            auto* main_scope = ast_current_function->function.scope_blocks[0];
-            auto& main_scope_statements = main_scope->block.statements;
+            BasicBlock* entry_block = builder.create_block(&llvm_allocator);
+            builder.append_to_function(entry_block);
+            builder.set_block(entry_block);
 
-            bool conditional_alloca = ast_current_function->function.type->function_type.ret_type->id != TypeID::VoidType;
+            auto arg_count = builder.function->arg_count;
+
+
+            auto ret_type = builder.function->value.type->function_t.ret_type;
+            bool conditional_alloca = ret_type->id != TypeID::VoidType;
             if (conditional_alloca)
             {
                 conditional_alloca = false;
 
-                for (auto* st_node : main_scope_statements)
+                for (auto* st_node : ast_main_scope_statements)
                 {
                     if (st_node->type == NodeType::Conditional)
                     {
@@ -1374,64 +979,56 @@ namespace LLVM
                             break;
                         }
                     }
-                    // @Warning: here we need to comtemplate other cases which imply new blocks, like loops
+                    // @Warning: here we need to comtemplate other cases which imply new blocks
                 }
             }
 
-            llvm_function.arg_count = arg_count;
-            llvm_function.next_index = llvm_function.arg_count + 1;
-            llvm_function.conditional_alloca = conditional_alloca;
+            //llvm_function.arg_count = arg_count;
+            //llvm_function.next_index = llvm_function.arg_count + 1;
+            //llvm_function.conditional_alloca = conditional_alloca;
 
-            auto alloca_count = ast_current_function->function.variables.len + conditional_alloca;
-            Buffer<InstructionInfo*> alloca_buffer = {};
+            auto alloca_count = arg_count + ast_current_function->function.variables.len + conditional_alloca;
+            //Buffer<InstructionInfo*> alloca_buffer = {};
             if (alloca_count > 0)
             {
-                alloca_buffer = Buffer<InstructionInfo*>::create(&llvm_allocator, alloca_count);
+                //alloca_buffer = Buffer<InstructionInfo*>::create(&llvm_allocator, alloca_count);
             }
 
-            auto symbol_buffer = Buffer<Symbol>::create(&llvm_allocator, 1024);
-            auto patch_buffer = Buffer<PatchBlock>::create(&llvm_allocator, 1024);
-
-            ir_builder.current_fn = &llvm_function;
             // @TODO: abstract this away
             {
-                ir_builder.change_block(&ir_builder.current_fn->entry_block);
-                ir_builder.current->label.type = Symbol::ID::EntryBlockLabel;
-                ir_builder.current->instructions = ir_builder.current->instructions.create(&llvm_allocator, 1024);
-                ir_builder.current_alloca_buffer = &alloca_buffer;
-                ir_builder.current_symbol_buffer = &symbol_buffer;
-                ir_builder.current_patch_list = &patch_buffer;
-
                 if (conditional_alloca)
                 {
-                    Alloca conditional_alloca_instruction = {
-                        .type = ast_current_function->function.type->function_type.ret_type,
-                        .index = ir_builder.current_fn->next_index++,
-                        .count = 1,
-                        .alignment = 4,
-                    };
-                    auto* conditional_alloca_instruction_ptr = ir_builder.append({
-                        .id = Instruction::Alloca,
-                        .alloca_i = conditional_alloca_instruction,
-                        });
-                    ir_builder.current_alloca_buffer->append(conditional_alloca_instruction_ptr);
+                    builder.create_alloca(ret_type);
                 }
 
-                for (auto* var_node : ast_current_function->function.variables)
+                // Arguments
+                for (auto* arg_node : ast_current_function->function.arguments)
                 {
-                    assert(var_node->type == NodeType::VarDecl);
-
-                    ir_builder.create_alloca(var_node);
+                    assert(arg_node->type == NodeType::VarDecl);
+                    auto* arg_type = arg_node->var_decl.type;
+                    assert(arg_type);
+                    builder.create_alloca(arg_type);
+                    // @TODO: store?
                 }
             }
 
-            work_block(&llvm_allocator, ir_builder, type_declarations, ast_current_function->function, ast_current_function->function.scope_blocks[0], &ir_builder.current_fn->entry_block);
-
-            ir_builder.print_block(&ir_builder.current_fn->entry_block);
-
-            for (auto& basic_block : ir_builder.current_fn->basic_blocks)
+            for (auto* statement_node : ast_main_scope_statements)
             {
-                ir_builder.print_block(&basic_block);
+                do_node(&llvm_allocator, builder, statement_node);
+            }
+
+            SlotTracker slot_tracker = SlotTracker::create(&llvm_allocator, 2048);
+            // @TODO: change hardcoding
+            slot_tracker.next_id = slot_tracker.starting_id = 1;
+
+            // print function:
+            for (auto* block : function->basic_blocks)
+            {
+                block->print(slot_tracker);
+                for (auto* instruction : block->instructions)
+                {
+                    instruction->print(slot_tracker);
+                }
             }
         }
     }

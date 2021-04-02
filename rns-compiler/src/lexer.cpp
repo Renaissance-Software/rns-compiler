@@ -154,7 +154,7 @@ struct NameMatch
     };
 };
 
-static inline NameMatch match_name(const char* name, u32 len, TypeBuffer& type_declarations)
+static inline NameMatch match_name(const char* name, u32 len)
 {
     for (auto i = 0; i < keyword_count; i++)
     {
@@ -166,7 +166,7 @@ static inline NameMatch match_name(const char* name, u32 len, TypeBuffer& type_d
         }
     }
 
-    auto* type = Typing::get_native_type(type_declarations, name, len);
+    auto* type = Type::get({ name, len });
     if (type)
     {
         return { .token_id = TokenID::Type, .type = type };
@@ -175,7 +175,7 @@ static inline NameMatch match_name(const char* name, u32 len, TypeBuffer& type_d
     return { .token_id = TokenID::Symbol };
 }
 
-LexerResult lex(Compiler& compiler, TypeBuffer& type_declarations, RNS::String file_content)
+LexerResult lex(Compiler& compiler, RNS::String file_content)
 {
     RNS_PROFILE_FUNCTION();
     compiler.subsystem = Compiler::Subsystem::Lexer;
@@ -238,7 +238,7 @@ LexerResult lex(Compiler& compiler, TypeBuffer& type_declarations, RNS::String f
                 end = i;
                 i--;
                 u32 len = end - start;
-                auto match = match_name(&token_buffer.file[start], len, type_declarations);
+                auto match = match_name(&token_buffer.file[start], len);
                 Token* t = token_buffer.new_token(match.token_id, start, end, static_cast<u16>(token_buffer.line_count));
                 switch (match.token_id)
                 {
