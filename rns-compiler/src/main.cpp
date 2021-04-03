@@ -91,7 +91,7 @@ s32 rns_main(s32 argc, char* argv[])
     PerformanceAPI_BeginEvent("Main function", nullptr, PERFORMANCEAPI_DEFAULT_COLOR);
 #endif
 
-#define TEST_FILES 0
+#define TEST_FILES 1
 #if TEST_FILES
     for (auto i = 0; i < rns_array_length(test_files); i++)
     {

@@ -101,8 +101,7 @@ Type* Typing::Type::get_bool_type()
 
 Type* Typing::Type::get_void_type()
 {
-    RNS_NOT_IMPLEMENTED;
-    return nullptr;
+    return Type::get(StringFromCStringLiteral("none"));
 }
 
 TypeBuffer Typing::Type::type_buffer;

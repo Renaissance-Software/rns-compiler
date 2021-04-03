@@ -380,7 +380,14 @@ namespace LLVM
                 } break;
                 case InstructionID::Ret:
                 {
-                    printf("ret i32 %s", operands[0]->print(operand0, slot_tracker));
+                    if (operands[0])
+                    {
+                        printf("ret i32 %s", operands[0]->print(operand0, slot_tracker));
+                    }
+                    else
+                    {
+                        printf("ret void");
+                    }
                 } break;
                 default:
                     RNS_NOT_IMPLEMENTED;
@@ -424,22 +431,30 @@ namespace LLVM
 
     const char* Value::print(char* buffer, SlotTracker& slot_tracker)
     {
-        // @TODO: fix
-        switch (this->typeID)
+        if (this)
         {
-            case TypeID::IntegerType:
+            switch (this->typeID)
             {
-                auto* integer_value = (APInt*)this;
-                sprintf(buffer, "%llu", integer_value->value.eight_byte);
-            } break;
-            case TypeID::LabelType:
-            {
-                auto id = slot_tracker.find(this);
-                sprintf(buffer, "%%%llu", id);
-            } break;
-            default:
-                RNS_NOT_IMPLEMENTED;
-                break;
+                case TypeID::IntegerType:
+                {
+                    auto* integer_value = (APInt*)this;
+                    sprintf(buffer, "%llu", integer_value->value.eight_byte);
+                } break;
+                case TypeID::LabelType:
+                {
+                    auto id = slot_tracker.find(this);
+                    sprintf(buffer, "%%%llu", id);
+                } break;
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+        }
+        else
+        {
+            assert(false);
+            // @TODO: we are assuming here that this is void
+            //sprintf(buffer, "%llu", integer_value->value.eight_byte);
         }
 
         return (const char*)buffer;
@@ -742,8 +757,7 @@ namespace LLVM
 
         Instruction* create_ret_void()
         {
-            RNS_NOT_IMPLEMENTED;
-            return nullptr;
+            return create_ret(nullptr);
         }
 
     private:
@@ -1068,21 +1082,27 @@ namespace LLVM
                 assert(!builder.emitted_return);
                 builder.emitted_return = true;
                 auto* ast_return_expression = node->ret.expr;
-                // @TODO: void
-                assert(ast_return_expression);
-                auto* ret_value = do_node(allocator, builder, ast_return_expression);
-
-                if (builder.conditional_alloca)
+                if (ast_return_expression)
                 {
-                    assert(builder.return_alloca);
-                    assert(builder.exit_block);
-                    builder.create_store(ret_value, reinterpret_cast<Value*>(builder.return_alloca));
-                    builder.create_br(builder.exit_block);
+                    assert(ast_return_expression);
+                    auto* ret_value = do_node(allocator, builder, ast_return_expression);
+
+                    if (builder.conditional_alloca)
+                    {
+                        assert(builder.return_alloca);
+                        assert(builder.exit_block);
+                        builder.create_store(ret_value, reinterpret_cast<Value*>(builder.return_alloca));
+                        builder.create_br(builder.exit_block);
+                    }
+                    else
+                    {
+                        // @TODO: check type
+                        builder.create_ret(ret_value);
+                    }
                 }
                 else
                 {
-                    // @TODO: check type
-                    builder.create_ret(ret_value);
+                    builder.create_br(builder.exit_block);
                 }
             } break;
             default:
@@ -1123,8 +1143,8 @@ namespace LLVM
             auto arg_count = builder.function->arg_count;
             auto ret_type = builder.function->value.type->function_t.ret_type;
 
-            builder.conditional_alloca = ret_type->id != TypeID::VoidType;
-            if (builder.conditional_alloca)
+            bool ret_type_void = ret_type->id == TypeID::VoidType;
+            if (!ret_type_void)
             {
                 builder.conditional_alloca = false;
 
@@ -1159,9 +1179,14 @@ namespace LLVM
 
             // @TODO: reserve as many position as 'alloca_count' in the main basic block, displace the len by that offset and write the rest of instructions there.
             // Alloca can have their special insertion entry point
+            // @WARNING: this would imply we could fail with non-optimized build dead code elimination
             if (builder.conditional_alloca)
             {
                 builder.return_alloca = builder.create_alloca(ret_type);
+                builder.exit_block = builder.create_block(&llvm_allocator);
+            }
+            else if (ret_type_void)
+            {
                 builder.exit_block = builder.create_block(&llvm_allocator);
             }
 
@@ -1173,19 +1198,32 @@ namespace LLVM
                 assert(arg_type);
                 builder.create_alloca(arg_type);
                 // @TODO: store?
+                assert(arg_count == 0);
             }
 
             do_node(&llvm_allocator, builder, ast_main_scope);
 
             if (builder.conditional_alloca)
             {
+                assert(builder.current->instructions.len != 0);
+
+                builder.append_to_function(builder.exit_block);
+                builder.set_block(builder.exit_block);
+
+                auto* loaded_return = builder.create_load(builder.return_alloca->alloca_i.allocated_type, reinterpret_cast<Value*>(builder.return_alloca));
+                assert(loaded_return);
+                builder.create_ret(reinterpret_cast<Value*>(loaded_return));
+            }
+            else if (ret_type_void)
+            {
                 if (builder.current->instructions.len == 0)
                 {
-                    assert(false);
                     auto* saved_current = builder.set_block(builder.exit_block);
-
+                    assert(saved_current);
                     auto index = builder.function->basic_blocks.get_id_if_ref_buffer(saved_current);
-                    assert(index);
+                    // @Info: this is a no-statements function.
+                    // @TODO: not create a basic block if the function has no statements
+                    assert(index == 0);
                     builder.function->basic_blocks[index] = builder.current;
                     builder.current->parent = builder.function;
                 }
@@ -1195,12 +1233,12 @@ namespace LLVM
                     builder.set_block(builder.exit_block);
                 }
 
-                auto* loaded_return = builder.create_load(builder.return_alloca->alloca_i.allocated_type, reinterpret_cast<Value*>(builder.return_alloca));
-                builder.create_ret(reinterpret_cast<Value*>(loaded_return));
+                builder.create_ret_void();
             }
 
             SlotTracker slot_tracker = SlotTracker::create(&llvm_allocator, 2048);
             // @TODO: change hardcoding
+            assert(arg_count == 0);
             slot_tracker.next_id = slot_tracker.starting_id = 1;
 
             for (auto* block : function->basic_blocks)
