@@ -546,6 +546,14 @@ namespace LLVM
         InstructionBuffer* instruction_buffer;
         /// </summary>
         s64 next_alloca_index;
+        // @TODO: remove from here? Should this be userspace?
+        /**/
+        Instruction* return_alloca;
+        BasicBlock* exit_block;
+        bool conditional_alloca;
+        // @TODO: this should be taken into account in every branch statement
+        bool emitted_return;
+        /**/
 
         // @TODO: guarantee pointer stability
         Instruction* create_alloca(Type* type, Value* array_size = nullptr, const char* name = nullptr)
@@ -618,6 +626,7 @@ namespace LLVM
 
         Instruction* create_br(BasicBlock* dst_block)
         {
+            assert(dst_block);
             if (!is_terminated())
             {
                 Instruction i = {
@@ -834,15 +843,17 @@ namespace LLVM
         {
             case NodeType::Block:
             {
-                assert(node->block.type != Block::Type::Function);
-
                 for (auto* st_node : node->block.statements)
                 {
-                    do_node(allocator, builder, st_node);
+                    if (!builder.emitted_return)
+                    {
+                        do_node(allocator, builder, st_node);
+                    }
                 }
             } break;
             case NodeType::Conditional:
             {
+                bool saved_emitted_return = builder.emitted_return;
                 auto* ast_condition = node->conditional.condition;
                 auto* ast_if_block = node->conditional.if_block;
                 auto* ast_else_block = node->conditional.else_block;
@@ -873,15 +884,15 @@ namespace LLVM
                     }
                 }
 
-                if (if_block != exit_block)
-                {
-                    builder.append_to_function(if_block);
-                    builder.set_block(if_block);
-                    do_node(allocator, builder, ast_if_block);
+                builder.emitted_return = false;
+                builder.append_to_function(if_block);
+                builder.set_block(if_block);
+                do_node(allocator, builder, ast_if_block);
+                bool if_block_returned = builder.emitted_return;
 
-                    builder.create_br(exit_block);
-                }
+                builder.create_br(exit_block);
 
+                builder.emitted_return = false;
                 if (else_block != exit_block)
                 {
                     builder.append_to_function(else_block);
@@ -890,8 +901,11 @@ namespace LLVM
 
                     builder.create_br(exit_block);
                 }
+                bool else_block_returned = builder.emitted_return;
 
-                if (exit_block_in_use)
+                builder.emitted_return = if_block_returned && else_block_returned;
+
+                if (exit_block_in_use && !builder.emitted_return)
                 {
                     builder.append_to_function(exit_block);
                     builder.set_block(exit_block);
@@ -933,9 +947,12 @@ namespace LLVM
                 builder.set_block(loop_postfix_block);
                 do_node(allocator, builder, ast_loop_postfix);
 
-                builder.create_br(loop_prefix_block);
-                builder.append_to_function(loop_end_block);
-                builder.set_block(loop_end_block);
+                if (!builder.emitted_return)
+                {
+                    builder.create_br(loop_prefix_block);
+                    builder.append_to_function(loop_end_block);
+                    builder.set_block(loop_end_block);
+                }
             } break;
             case NodeType::Break:
             {
@@ -1047,13 +1064,26 @@ namespace LLVM
             } break;
             case NodeType::Ret:
             {
-                // @TODO: deal with conditional alloca
+                // @TODO: tolerate this in the future?
+                assert(!builder.emitted_return);
+                builder.emitted_return = true;
                 auto* ast_return_expression = node->ret.expr;
                 // @TODO: void
                 assert(ast_return_expression);
-                // @TODO: check type
                 auto* ret_value = do_node(allocator, builder, ast_return_expression);
-                builder.create_ret(ret_value);
+
+                if (builder.conditional_alloca)
+                {
+                    assert(builder.return_alloca);
+                    assert(builder.exit_block);
+                    builder.create_store(ret_value, reinterpret_cast<Value*>(builder.return_alloca));
+                    builder.create_br(builder.exit_block);
+                }
+                else
+                {
+                    // @TODO: check type
+                    builder.create_ret(ret_value);
+                }
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
@@ -1091,13 +1121,12 @@ namespace LLVM
             builder.set_block(entry_block);
 
             auto arg_count = builder.function->arg_count;
-
-
             auto ret_type = builder.function->value.type->function_t.ret_type;
-            bool conditional_alloca = ret_type->id != TypeID::VoidType;
-            if (conditional_alloca)
+
+            builder.conditional_alloca = ret_type->id != TypeID::VoidType;
+            if (builder.conditional_alloca)
             {
-                conditional_alloca = false;
+                builder.conditional_alloca = false;
 
                 for (auto* st_node : ast_main_scope_statements)
                 {
@@ -1105,12 +1134,12 @@ namespace LLVM
                     {
                         if (introspect_for_conditional_allocas(st_node->conditional.if_block))
                         {
-                            conditional_alloca = true;
+                            builder.conditional_alloca = true;
                             break;
                         }
                         if (introspect_for_conditional_allocas(st_node->conditional.else_block))
                         {
-                            conditional_alloca = true;
+                            builder.conditional_alloca = true;
                             break;
                         }
                     }
@@ -1118,7 +1147,7 @@ namespace LLVM
                     {
                         if (introspect_for_conditional_allocas(st_node->loop.body))
                         {
-                            conditional_alloca = true;
+                            builder.conditional_alloca = true;
                             break;
                         }
                     }
@@ -1126,38 +1155,48 @@ namespace LLVM
                 }
             }
 
-            //llvm_function.arg_count = arg_count;
-            //llvm_function.next_index = llvm_function.arg_count + 1;
-            //llvm_function.conditional_alloca = conditional_alloca;
+            //auto alloca_count = arg_count + ast_current_function->function.variables.len + conditional_alloca;
 
-            auto alloca_count = arg_count + ast_current_function->function.variables.len + conditional_alloca;
-            //Buffer<InstructionInfo*> alloca_buffer = {};
-            if (alloca_count > 0)
+            // @TODO: reserve as many position as 'alloca_count' in the main basic block, displace the len by that offset and write the rest of instructions there.
+            // Alloca can have their special insertion entry point
+            if (builder.conditional_alloca)
             {
-                //alloca_buffer = Buffer<InstructionInfo*>::create(&llvm_allocator, alloca_count);
+                builder.return_alloca = builder.create_alloca(ret_type);
+                builder.exit_block = builder.create_block(&llvm_allocator);
             }
 
-            // @TODO: abstract this away
+            // Arguments
+            for (auto* arg_node : ast_current_function->function.arguments)
             {
-                if (conditional_alloca)
-                {
-                    builder.create_alloca(ret_type);
-                }
-
-                // Arguments
-                for (auto* arg_node : ast_current_function->function.arguments)
-                {
-                    assert(arg_node->type == NodeType::VarDecl);
-                    auto* arg_type = arg_node->var_decl.type;
-                    assert(arg_type);
-                    builder.create_alloca(arg_type);
-                    // @TODO: store?
-                }
+                assert(arg_node->type == NodeType::VarDecl);
+                auto* arg_type = arg_node->var_decl.type;
+                assert(arg_type);
+                builder.create_alloca(arg_type);
+                // @TODO: store?
             }
 
-            for (auto* statement_node : ast_main_scope_statements)
+            do_node(&llvm_allocator, builder, ast_main_scope);
+
+            if (builder.conditional_alloca)
             {
-                do_node(&llvm_allocator, builder, statement_node);
+                if (builder.current->instructions.len == 0)
+                {
+                    assert(false);
+                    auto* saved_current = builder.set_block(builder.exit_block);
+
+                    auto index = builder.function->basic_blocks.get_id_if_ref_buffer(saved_current);
+                    assert(index);
+                    builder.function->basic_blocks[index] = builder.current;
+                    builder.current->parent = builder.function;
+                }
+                else
+                {
+                    builder.append_to_function(builder.exit_block);
+                    builder.set_block(builder.exit_block);
+                }
+
+                auto* loaded_return = builder.create_load(builder.return_alloca->alloca_i.allocated_type, reinterpret_cast<Value*>(builder.return_alloca));
+                builder.create_ret(reinterpret_cast<Value*>(loaded_return));
             }
 
             SlotTracker slot_tracker = SlotTracker::create(&llvm_allocator, 2048);
@@ -1184,15 +1223,17 @@ namespace LLVM
                 }
             }
 
-            //// print function:
-            //for (auto* block : function->basic_blocks)
-            //{
-            //    block->print(slot_tracker);
-            //    for (auto* instruction : block->instructions)
-            //    {
-            //        instruction->print(slot_tracker);
-            //    }
-            //}
+#if 1
+            // print function:
+            for (auto* block : function->basic_blocks)
+            {
+                block->print(slot_tracker);
+                for (auto* instruction : block->instructions)
+                {
+                    instruction->print(slot_tracker);
+                }
+            }
+#endif
         }
     }
 }

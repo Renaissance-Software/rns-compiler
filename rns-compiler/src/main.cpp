@@ -64,12 +64,6 @@ bool compiler_workflow(RNS::String file)
     CompilerIR compiler_ir = CompilerIR::LLVM_CUSTOM;
     switch (compiler_ir)
     {
-        case CompilerIR::WASM:
-        {
-            //auto wasm_result = WASMBC::encode(&parser_result, &bc_allocator);
-            //DebugAllocator mc_allocator = create_allocator(RNS_MEGABYTE(100));
-            //jit_wasm(&wasm_result.ib, wasm_result.stack_pointer_id);
-        } break;
         case CompilerIR::LLVM_CUSTOM:
         {
             LLVM::encode(compiler, parser_result.node_buffer, parser_result.function_type_declarations, parser_result.function_declarations);
@@ -115,51 +109,23 @@ s32 rns_main(s32 argc, char* argv[])
     }
 #endif
     RNS::String working_test_case =
-        NEW_TEST(main :: () -> s32
+        NEW_TEST(
+            main :: () -> s32
     {
-    sum: s32 = 0;
-    for i : 4
-    {
-        if i > 1
+        a: s32 = 0;
+        if (a == 0)
         {
-            if i == 2
-            {
-                sum = sum * sum;
-                break;
-            }
-            sum = sum + 1;
+            return 1;
         }
         else
         {
-            sum = sum + 12;
-            if i == 3
-            {
-                sum = sum + 1231;
-                if sum == 1231
-                {
-                    for j : 10
-                    {
-                        sum = sum + 1;
-                    }
-                }
-                sum = sum + sum;
-            }
-            else if i == sum
-            {
-                sum = sum - 100;
-            }
-            else
-            {
-                sum = sum - 3;
-                break;
-            }
-            sum = sum + 2;
+            return 0;
         }
-        sum = sum + i;
+        
+        return 2;
     }
-    return sum;
-    }
-    );
+
+        );
 
     bool result = compiler_workflow(working_test_case);
     if (result)
