@@ -396,7 +396,7 @@ namespace AST
     inline const u32 no_value = UINT32_MAX;
 
     struct Node;
-    using NodeSlice = RNS::Buffer<Node>;
+    using NodeSlice  = RNS::Buffer<Node>;
     using FieldNames = RNS::Slice<RNS::String>;
     using FieldTypes = RNS::Slice<Type>;
 
@@ -407,6 +407,7 @@ namespace AST
         Ret,
         VarDecl,
         VarExpr,
+        InvokeExpr,
         Conditional,
         Block,
         Loop,
@@ -490,7 +491,14 @@ namespace AST
         NodeRefBuffer scope_blocks;
         NodeRefBuffer arguments;
         NodeRefBuffer variables;
+        RNS::String name;
         Node* type;
+    };
+
+    struct InvokeExpr
+    {
+        NodeRefBuffer arguments;
+        Node* expr;
     };
 
     struct Node
@@ -504,6 +512,7 @@ namespace AST
             RetExpr ret;
             VarDecl var_decl;
             VarExpr var_expr;
+            InvokeExpr invoke_expr;
             Block block;
             Conditional conditional;
             Loop loop;

@@ -91,7 +91,7 @@ s32 rns_main(s32 argc, char* argv[])
     PerformanceAPI_BeginEvent("Main function", nullptr, PERFORMANCEAPI_DEFAULT_COLOR);
 #endif
 
-#define TEST_FILES 1
+#define TEST_FILES 0
 #if TEST_FILES
     for (auto i = 0; i < rns_array_length(test_files); i++)
     {
@@ -110,19 +110,14 @@ s32 rns_main(s32 argc, char* argv[])
 #endif
     RNS::String working_test_case =
         NEW_TEST(
+            foo :: () -> s32
+    {
+        return 5;
+    }
             main :: () -> s32
     {
-        a: s32 = 0;
-        if (a == 0)
-        {
-            return 1;
-        }
-        else
-        {
-            return 0;
-        }
-        
-        return 2;
+            a: s32 = foo() + 1;
+                return a + foo();
     }
 
         );

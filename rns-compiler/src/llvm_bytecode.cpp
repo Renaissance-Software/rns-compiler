@@ -145,17 +145,17 @@ namespace LLVM
     struct SlotTracker;
     struct Value
     {
-        IDType id;
         Type* type;
         // @TODO: undo this mess
         TypeID typeID;
+        RNS::String name;
 
-        static Value New(TypeID type_ID, Type* type = nullptr, const char* name = nullptr)
+        static Value New(TypeID type_ID, String name = {}, Type* type = nullptr)
         {
             Value e = {
-                .id = IDManager::append(name),
                 .type = type,
                 .typeID = type_ID,
+                .name = name,
             };
 
             return e;
@@ -222,7 +222,7 @@ namespace LLVM
             auto* new_int = new(allocator) APInt;
             assert(new_int);
             *new_int = {
-                .e = Value::New(TypeID::IntegerType, integer_type),
+                .e = Value::New(TypeID::IntegerType, {}, integer_type),
                 .value = value,
                 .bit_count = bits,
                 .is_signed = is_signed,
@@ -389,6 +389,13 @@ namespace LLVM
                         printf("ret void");
                     }
                 } break;
+                case InstructionID::Call:
+                {
+                    assert(operand_count == 1);
+                    Value* callee = operands[0];
+                    assert(callee->typeID == TypeID::FunctionType);
+                    printf("%%%llu = call i32 @%s()", id1, callee->name.ptr);
+                } break;
                 default:
                     RNS_NOT_IMPLEMENTED;
                     break;
@@ -417,6 +424,10 @@ namespace LLVM
                 {
                     id3 = slot_tracker.new_id(this);
                 } break;
+                case InstructionID::Call:
+                {
+                    id1 = slot_tracker.new_id(this);
+                } break;
                 case InstructionID::Store:
                 case InstructionID::Br:
                 case InstructionID::Ret:
@@ -431,30 +442,23 @@ namespace LLVM
 
     const char* Value::print(char* buffer, SlotTracker& slot_tracker)
     {
-        if (this)
+        // @Info: we shouldn't be null here. Void values are treated in the return printing case.
+        assert(this);
+        switch (this->typeID)
         {
-            switch (this->typeID)
+            case TypeID::IntegerType:
             {
-                case TypeID::IntegerType:
-                {
-                    auto* integer_value = (APInt*)this;
-                    sprintf(buffer, "%llu", integer_value->value.eight_byte);
-                } break;
-                case TypeID::LabelType:
-                {
-                    auto id = slot_tracker.find(this);
-                    sprintf(buffer, "%%%llu", id);
-                } break;
-                default:
-                    RNS_NOT_IMPLEMENTED;
-                    break;
-            }
-        }
-        else
-        {
-            assert(false);
-            // @TODO: we are assuming here that this is void
-            //sprintf(buffer, "%llu", integer_value->value.eight_byte);
+                auto* integer_value = (APInt*)this;
+                sprintf(buffer, "%llu", integer_value->value.eight_byte);
+            } break;
+            case TypeID::LabelType:
+            {
+                auto id = slot_tracker.find(this);
+                sprintf(buffer, "%%%llu", id);
+            } break;
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
         }
 
         return (const char*)buffer;
@@ -477,6 +481,9 @@ namespace LLVM
 
             return module;
         }
+
+        // @TODO: do typechecking
+        Function* find_function(String name, Type* type = nullptr);
     };
 
     struct Function
@@ -485,16 +492,15 @@ namespace LLVM
         Buffer<BasicBlock*> basic_blocks;
         Argument* arguments;
         s64 arg_count;
+        Module* parent;
         // @TODO: symbol table
 
-        static Function* create(Module* module, Type* function_type, /* @TODO: linkage*/ const char* name)
+        static Function* create(Module* module, Type* function_type, /* @TODO: linkage*/ String name)
         {
             auto* function = module->functions.allocate();
             *function = {
-                .value = {
-                    .id = IDManager::append(name),
-                    .type = function_type,
-                },
+                .value = Value::New(TypeID::FunctionType, name, function_type),
+                .parent = module,
                 // @TODO: basic blocks, args...
             };
             return function;
@@ -511,7 +517,23 @@ namespace LLVM
             RNS_NOT_IMPLEMENTED;
             return nullptr;
         }
+
+        void print(Allocator* allocator);
     };
+
+    inline Function* Module::find_function(String name, Type* type)
+    {
+        assert(functions.len);
+        for (auto& function : functions)
+        {
+            if (name.equal(function.value.name))
+            {
+                return &function;
+            }
+        }
+
+        return nullptr;
+    }
 
     struct BasicBlock
     {
@@ -522,11 +544,11 @@ namespace LLVM
 
         u64 id;
 
-        static BasicBlock create(const char* name = nullptr)
+        static BasicBlock create(String name = {})
         {
             // @TODO: consider dealing with inserting the block in the middle of the array
             BasicBlock new_basic_block = {
-                .value = Value::New(TypeID::LabelType, Type::get_label(), name),
+                .value = Value::New(TypeID::LabelType, name, Type::get_label()),
             };
 
             return new_basic_block;
@@ -541,16 +563,55 @@ namespace LLVM
 
         void print(SlotTracker& slot_tracker)
         {
-            if (parent->basic_blocks[0] == this)
-            {
-                printf("Entry block:\n");
-            }
-            else
+            // @Info: Don't print function's main scope
+            if (parent->basic_blocks[0] != this)
             {
                 printf("%llu:\n", id);
             }
         }
     };
+
+    void Function::print(Allocator* allocator)
+    {
+        SlotTracker slot_tracker = SlotTracker::create(allocator, 2048);
+        // @TODO: change hardcoding
+        assert(arg_count == 0);
+        slot_tracker.next_id = slot_tracker.starting_id = 1;
+
+        for (auto* block : basic_blocks)
+        {
+            block->get_id(slot_tracker);
+            for (auto* instruction : block->instructions)
+            {
+                instruction->get_info(slot_tracker);
+            }
+        }
+
+        for (auto* block : basic_blocks)
+        {
+            for (auto* instruction : block->instructions)
+            {
+                if (instruction->base.id == InstructionID::Br)
+                {
+                    instruction->get_info(slot_tracker);
+                }
+            }
+        }
+
+        assert(arg_count == 0);
+        const char* ret_type = this->value.type->function_t.ret_type->id == TypeID::VoidType ? "void" : "i32";
+        printf("\ndefine dso_local %s @%s()\n{\n", ret_type, value.name.ptr);
+        // @Info: actual printing
+        for (auto* block : basic_blocks)
+        {
+            block->print(slot_tracker);
+            for (auto* instruction : block->instructions)
+            {
+                instruction->print(slot_tracker);
+            }
+        }
+        printf("}\n");
+    }
 
     struct Builder
     {
@@ -559,6 +620,7 @@ namespace LLVM
         /// <summary> Guarantee pointer stability for members
         BasicBlockBuffer* basic_block_buffer;
         InstructionBuffer* instruction_buffer;
+        Module* module;
         /// </summary>
         s64 next_alloca_index;
         // @TODO: remove from here? Should this be userspace?
@@ -601,11 +663,11 @@ namespace LLVM
             return insert_at_end(i);
         }
 
-        Instruction* create_load(Type* type, Value* value, bool is_volatile = false, const char* name = nullptr)
+        Instruction* create_load(Type* type, Value* value, bool is_volatile = false, String name = {})
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(TypeID::LabelType, type),
+                    .value = Value::New(TypeID::LabelType, name, type),
                     .id = InstructionID::Load,
                 },
                 .operands = { value},
@@ -631,7 +693,7 @@ namespace LLVM
             return previous;
         }
 
-        BasicBlock* create_block(Allocator* allocator, const char* name = nullptr)
+        BasicBlock* create_block(Allocator* allocator, String name = {})
         {
             BasicBlock* basic_block = basic_block_buffer->append(BasicBlock::create(name));
             // @TODO: this should change
@@ -758,6 +820,29 @@ namespace LLVM
         Instruction* create_ret_void()
         {
             return create_ret(nullptr);
+        }
+
+        Instruction* create_call(Value* callee, Value** argument_arr = nullptr, u8 arg_count = 0)
+        {
+            Instruction i = {
+                .base = {
+                    .value = Value::New(TypeID::LabelType),
+                    .id = InstructionID::Call,
+                },
+            };
+
+            assert(arg_count == 0);
+            assert(arg_count <= rns_array_length(i.operands) - 1);
+
+            i.operand_count = arg_count + 1;
+            i.operands[0] = callee;
+
+            for (auto index = 0; index < arg_count; index++)
+            {
+                i.operands[index + 1] = argument_arr[index];
+            }
+
+            return insert_at_end(i);
         }
 
     private:
@@ -1105,6 +1190,20 @@ namespace LLVM
                     builder.create_br(builder.exit_block);
                 }
             } break;
+            case NodeType::InvokeExpr:
+            {
+                assert(node->invoke_expr.arguments.len == 0);
+                auto* invoke_expr = node->invoke_expr.expr;
+                assert(invoke_expr);
+                assert(invoke_expr->type == NodeType::Function);
+                auto function_name = invoke_expr->function.name;
+                // @TODO: do typechecking
+                auto* function = builder.module->find_function(function_name);
+                assert(function);
+
+                auto* call = builder.create_call(reinterpret_cast<Value*>(function));
+                return reinterpret_cast<Value*>(call);
+            } break;
             default:
                 RNS_NOT_IMPLEMENTED;
                 break;
@@ -1118,19 +1217,26 @@ namespace LLVM
         RNS_PROFILE_FUNCTION();
         compiler.subsystem = Compiler::Subsystem::IR;
         auto llvm_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(50));
-        assert(function_declarations.len == 1);
         IDManager::init(&llvm_allocator, 1024, 1024 * 16);
         Module module = module.create(&llvm_allocator);
         BasicBlockBuffer basic_block_buffer = basic_block_buffer.create(&llvm_allocator, 1024);
         InstructionBuffer instruction_buffer = instruction_buffer.create(&llvm_allocator, 1024 * 16);
+        module.functions = module.functions.create(&llvm_allocator, function_declarations.len);
 
         for (auto& ast_current_function : function_declarations)
         {
+            Function::create(&module, &ast_current_function->function.type->type_expr, ast_current_function->function.name);
+        }
+
+        for (auto i = 0; i < function_declarations.len; i++)
+        {
+            auto& ast_current_function = function_declarations[i];
+            auto* function = &module.functions[i];
             Builder builder = {};
             builder.basic_block_buffer = &basic_block_buffer;
             builder.instruction_buffer = &instruction_buffer;
-            auto* function = Function::create(&module, &ast_current_function->function.type->type_expr, "main");
             builder.function = function;
+            builder.module = &module;
 
             auto* ast_main_scope = ast_current_function->function.scope_blocks[0];
             auto& ast_main_scope_statements = ast_main_scope->block.statements;
@@ -1236,42 +1342,7 @@ namespace LLVM
                 builder.create_ret_void();
             }
 
-            SlotTracker slot_tracker = SlotTracker::create(&llvm_allocator, 2048);
-            // @TODO: change hardcoding
-            assert(arg_count == 0);
-            slot_tracker.next_id = slot_tracker.starting_id = 1;
-
-            for (auto* block : function->basic_blocks)
-            {
-                block->get_id(slot_tracker);
-                for (auto* instruction : block->instructions)
-                {
-                    instruction->get_info(slot_tracker);
-                }
-            }
-
-            for (auto* block : function->basic_blocks)
-            {
-                for (auto* instruction : block->instructions)
-                {
-                    if (instruction->base.id == InstructionID::Br)
-                    {
-                        instruction->get_info(slot_tracker);
-                    }
-                }
-            }
-
-#if 1
-            // print function:
-            for (auto* block : function->basic_blocks)
-            {
-                block->print(slot_tracker);
-                for (auto* instruction : block->instructions)
-                {
-                    instruction->print(slot_tracker);
-                }
-            }
-#endif
+            function->print(&llvm_allocator);
         }
     }
 }

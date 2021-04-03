@@ -50,6 +50,7 @@ namespace AST
                 {
                     return t;
                 }
+                return nullptr;
             }
             return nullptr;
         }
@@ -233,6 +234,26 @@ namespace AST
             return nullptr;
         }
 
+        Node* find_existing_invoke_expression(Token* token)
+        {
+            String name = { token->symbol, token->offset };
+
+            for (auto* function_node : this->function_declarations)
+            {
+                if (function_node->function.name.equal(name))
+                {
+                    return function_node;
+                }
+            }
+
+            if (name.equal(current_function->function.name))
+            {
+                return current_function;
+            }
+
+            return nullptr;
+        }
+
         Node* parse_primary_expression(Node* parent)
         {
             auto* t = get_next_token();
@@ -257,6 +278,26 @@ namespace AST
                         var_decl_node->var_decl.name.ptr = t->symbol;
                         var_decl_node->var_decl.name.len = t->offset;
                         return var_decl_node;
+                    }
+                    else if (get_next_token()->id == '(')
+                    {
+                        auto* invoke_expr_node = nb.append(NodeType::InvokeExpr, parent);
+                        invoke_expr_node->invoke_expr.expr = find_existing_invoke_expression(t);
+                        assert(invoke_expr_node->invoke_expr.expr);
+                        auto* left_paren = expect_and_consume('(');
+                        if (!left_paren)
+                        {
+                            compiler.print_error({}, "Invoke expression requires opening parenthesis");
+                            return nullptr;
+                        }
+                        // @TODO: support argument passing
+                        auto* right_paren = expect_and_consume(')');
+                        if (!right_paren)
+                        {
+                            compiler.print_error({}, "Invoke expression requires closing parenthesis");
+                            return nullptr;
+                        }
+                        return invoke_expr_node;
                     }
                     else
                     {
@@ -721,6 +762,7 @@ namespace AST
             auto* function_node = nb.append(NodeType::Function, nullptr);
             function_node->function = {
                 .scope_blocks = Buffer<Node*>::create(&allocator, 16),
+                .name = { t->symbol, t->offset },
             };
             current_function = function_node;
 
@@ -832,43 +874,6 @@ const char* node_type_to_string(NodeType type)
     }
 }
 
-
-
-//bool name_already_exists(ModuleParser* parser, Node* node)
-//{
-//    Node* name_node = parser->nb.get(name_node_id);
-//    assert(name_node);
-//    assert(name_node->type == NodeType::SymName);
-//
-//    Node* scope_node = parser->nb.get(parser->current_scope);
-//    assert(scope_node);
-//    assert(scope_node->type == NodeType::Function);
-//
-//    u32* it = scope_node->function_decl.variables.ptr;
-//    s64 len = scope_node->function_decl.variables.len;
-//    const char* new_name = name_node->sym_name.ptr;
-//    for (s64 i = 0; i < len; i++)
-//    {
-//        u32 node_id = it[i];
-//        Node* variable_node = parser->nb.get(node_id);
-//        assert(variable_node);
-//        assert(variable_node->type == NodeType::VarDecl);
-//        u32 var_name_node_id = variable_node->var_decl.name;
-//        Node* variable_name_node = parser->nb.get(var_name_node_id);
-//        assert(variable_name_node);
-//        assert(variable_name_node->type == NodeType::SymName);
-//
-//        const char* existent_name = variable_name_node->sym_name.ptr;
-//        if (strcmp(existent_name, new_name) == 0)
-//        {
-//            return true;
-//        }
-//    }
-//
-//    return false;
-//}
-
-// @TODO: reconsider what type is to be returned from top level declarations
 AST::Result parse(Compiler& compiler, LexerResult& lexer_result)
 {
     RNS_PROFILE_FUNCTION();
