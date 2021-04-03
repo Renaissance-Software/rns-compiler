@@ -99,8 +99,6 @@ namespace LLVM
         InsertValue = 65,
         LandingPad = 66,
         Freeze = 67,
-
-        RNS_PATCH = 0xFF,
     };
 
     struct IDManager
@@ -144,22 +142,26 @@ namespace LLVM
     StringBuffer IDManager::buffer;
     IDType IDManager::next_id;
 
+    struct SlotTracker;
     struct Value
     {
         IDType id;
         Type* type;
+        // @TODO: undo this mess
+        TypeID typeID;
 
-        static Value New(Type* type = nullptr, const char* name = nullptr)
+        static Value New(TypeID type_ID, Type* type = nullptr, const char* name = nullptr)
         {
             Value e = {
                 .id = IDManager::append(name),
                 .type = type,
+                .typeID = type_ID,
             };
 
             return e;
         }
 
-        void print();
+        const char* print(char* buffer, SlotTracker& slot_tracker);
     };
 
     struct SlotTracker
@@ -220,7 +222,7 @@ namespace LLVM
             auto* new_int = new(allocator) APInt;
             assert(new_int);
             *new_int = {
-                .e = Value::New(integer_type),
+                .e = Value::New(TypeID::IntegerType, integer_type),
                 .value = value,
                 .bit_count = bits,
                 .is_signed = is_signed,
@@ -285,6 +287,25 @@ namespace LLVM
     struct Compare
     {
         CmpType type;
+
+        const char* to_string()
+        {
+            switch (type)
+            {
+                case CmpType::ICMP_EQ:
+                    return "eq";
+                case CmpType::ICMP_NE:
+                    return "ne";
+                case CmpType::ICMP_SLT:
+                    return "slt";
+                case CmpType::ICMP_SGT:
+                    return "sgt";
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+            return nullptr;
+        }
     };
 
     struct Instruction
@@ -298,6 +319,9 @@ namespace LLVM
 
         Value* operands[15];
         u8 operand_count;
+        u64 id1;
+        u64 id2;
+        u64 id3;
 
         union
         {
@@ -308,33 +332,88 @@ namespace LLVM
 
         void print(SlotTracker& slot_tracker)
         {
+            char operand0[64] = {};
+            char operand1[64] = {};
+            char operand2[64] = {};
+
+            printf("\t");
             switch (base.id)
             {
                 case InstructionID::Alloca:
                 {
-                    auto id = slot_tracker.new_id(this);
-                    printf("%%%llu = alloca i32, align 4\n", id);
+                    printf("%%%llu = alloca i32, align 4", id1);
                 } break;
                 case InstructionID::Store:
                 {
-                    auto* value = operands[0];
-                    auto* ptr = operands[1];
-                    auto id = slot_tracker.find(ptr);
-                    printf("store i32 ");
-                    value->print();
-                    printf(", i32* %%%llu, align 4\n", id);
+                    printf("store i32 %s, i32* %s, align 4", operands[0]->print(operand0, slot_tracker), operands[1]->print(operand1, slot_tracker));
                 } break;
                 case InstructionID::Br:
                 {
-                    RNS_NOT_IMPLEMENTED;
                     if (operand_count == 1)
                     {
-
+                        printf("br label %s", operands[0]->print(operand0, slot_tracker));
                     }
                     else
                     {
-
+                        printf("br i1 %s, label %s, label %s", operands[2]->print(operand2, slot_tracker), operands[0]->print(operand0, slot_tracker), operands[1]->print(operand1, slot_tracker));
                     }
+                } break;
+                case InstructionID::Load:
+                {
+                    printf("%%%llu = load i32, i32* %s, align 4", id3, operands[0]->print(operand0, slot_tracker));
+                } break;
+                case InstructionID::ICmp:
+                {
+                    printf("%%%llu = icmp %s i32 %s, %s", id3, compare.to_string(), operands[0]->print(operand0, slot_tracker), operands[1]->print(operand1, slot_tracker));
+                } break;
+                case InstructionID::Add:
+                {
+                    printf("%%%llu = add i32 %s, %s, align 4", id3, operands[0]->print(operand0, slot_tracker), operands[1]->print(operand1, slot_tracker));
+                } break;
+                case InstructionID::Sub:
+                {
+                    printf("%%%llu = sub i32 %s, %s, align 4", id3, operands[0]->print(operand0, slot_tracker), operands[1]->print(operand1, slot_tracker));
+                } break;
+                case InstructionID::Mul:
+                {
+                    printf("%%%llu = mul i32 %s, %s, align 4", id3, operands[0]->print(operand0, slot_tracker), operands[1]->print(operand1, slot_tracker));
+                } break;
+                case InstructionID::Ret:
+                {
+                    printf("ret i32 %s", operands[0]->print(operand0, slot_tracker));
+                } break;
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+
+            printf("\n");
+        }
+
+        void get_info(SlotTracker& slot_tracker)
+        {
+            switch (base.id)
+            {
+                case InstructionID::Alloca:
+                {
+                    id1 = slot_tracker.new_id(this);
+                } break;
+                case InstructionID::Load:
+                {
+                    id3 = slot_tracker.new_id(this);
+                } break;
+                case InstructionID::ICmp:
+                {
+                    id3 = slot_tracker.new_id(this);
+                } break;
+                case InstructionID::Mul: case InstructionID::Add: case InstructionID::Sub:
+                {
+                    id3 = slot_tracker.new_id(this);
+                } break;
+                case InstructionID::Store:
+                case InstructionID::Br:
+                case InstructionID::Ret:
+                {
                 } break;
                 default:
                     RNS_NOT_IMPLEMENTED;
@@ -343,19 +422,27 @@ namespace LLVM
         }
     };
 
-    void Value::print()
+    const char* Value::print(char* buffer, SlotTracker& slot_tracker)
     {
-        switch (type->id)
+        // @TODO: fix
+        switch (this->typeID)
         {
             case TypeID::IntegerType:
             {
                 auto* integer_value = (APInt*)this;
-                printf("%llu", integer_value->value.eight_byte);
+                sprintf(buffer, "%llu", integer_value->value.eight_byte);
+            } break;
+            case TypeID::LabelType:
+            {
+                auto id = slot_tracker.find(this);
+                sprintf(buffer, "%%%llu", id);
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
                 break;
         }
+
+        return (const char*)buffer;
     }
 
     struct Argument
@@ -418,14 +505,23 @@ namespace LLVM
         Buffer<Instruction*> instructions;
         u32 use_count;
 
+        u64 id;
+
         static BasicBlock create(const char* name = nullptr)
         {
             // @TODO: consider dealing with inserting the block in the middle of the array
             BasicBlock new_basic_block = {
-                .value = Value::New(Type::get_label(), name),
+                .value = Value::New(TypeID::LabelType, Type::get_label(), name),
             };
 
             return new_basic_block;
+        }
+        void get_id(SlotTracker& slot_tracker)
+        {
+            if (parent->basic_blocks[0] != this)
+            {
+                id = slot_tracker.new_id(this);
+            }
         }
 
         void print(SlotTracker& slot_tracker)
@@ -436,7 +532,6 @@ namespace LLVM
             }
             else
             {
-                auto id = slot_tracker.new_id(this);
                 printf("%llu:\n", id);
             }
         }
@@ -457,7 +552,7 @@ namespace LLVM
         {
             Instruction i = {
                 .base {
-                    .value = Value::New(),
+                    .value = Value::New(TypeID::LabelType),
                     .id = InstructionID::Alloca,
                 },
                 .alloca_i = {
@@ -472,12 +567,13 @@ namespace LLVM
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(),
+                    .value = Value::New(TypeID::VoidType),
                     .id = InstructionID::Store,
                 },
                 .operands = { value, ptr },
                 .operand_count = 2,
             };
+            assert((u32)value->typeID);
 
             return insert_at_end(i);
         }
@@ -486,7 +582,7 @@ namespace LLVM
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(type),
+                    .value = Value::New(TypeID::LabelType, type),
                     .id = InstructionID::Load,
                 },
                 .operands = { value},
@@ -522,40 +618,48 @@ namespace LLVM
 
         Instruction* create_br(BasicBlock* dst_block)
         {
-            Instruction i = {
-                .base = {
-                    .value = Value::New(),
-                    .id = InstructionID::Br,
-                },
-                .operands = { reinterpret_cast<Value*>(dst_block) },
-                .operand_count = 1,
-            };
+            if (!is_terminated())
+            {
+                Instruction i = {
+                    .base = {
+                        .value = Value::New(TypeID::VoidType),
+                        .id = InstructionID::Br,
+                    },
+                    .operands = { reinterpret_cast<Value*>(dst_block) },
+                    .operand_count = 1,
+                };
 
-            dst_block->use_count++;
-            return insert_at_end(i);
+                dst_block->use_count++;
+                return insert_at_end(i);
+            }
+            return nullptr;
         }
-        
+
         Instruction* create_conditional_br(BasicBlock* true_block, BasicBlock* else_block, Value* condition)
         {
-            Instruction i = {
-                .base = {
-                    .value = Value::New(),
-                    .id = InstructionID::Br,
-                },
-                .operands = { reinterpret_cast<Value*>(true_block),  reinterpret_cast<Value*>(true_block), condition },
-                .operand_count = 3,
-            };
-            true_block->use_count++;
-            else_block->use_count++;
+            if (!is_terminated())
+            {
+                Instruction i = {
+                    .base = {
+                        .value = Value::New(TypeID::VoidType),
+                        .id = InstructionID::Br,
+                    },
+                    .operands = { reinterpret_cast<Value*>(true_block), reinterpret_cast<Value*>(else_block), condition },
+                    .operand_count = 3,
+                };
+                true_block->use_count++;
+                else_block->use_count++;
 
-            return insert_at_end(i);
+                return insert_at_end(i);
+            }
+            return nullptr;
         }
 
         Instruction* create_icmp(CmpType compare_type, Value* left, Value* right, const char* name = nullptr)
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(),
+                    .value = Value::New(TypeID::LabelType),
                     .id = InstructionID::ICmp,
                 },
                 .operands = { left, right },
@@ -570,7 +674,7 @@ namespace LLVM
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(),
+                    .value = Value::New(TypeID::LabelType),
                     .id = InstructionID::Add,
                 },
                 .operands = { left, right },
@@ -584,7 +688,7 @@ namespace LLVM
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(),
+                    .value = Value::New(TypeID::LabelType),
                     .id = InstructionID::Sub,
                 },
                 .operands = { left, right },
@@ -598,7 +702,7 @@ namespace LLVM
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(),
+                    .value = Value::New(TypeID::LabelType),
                     .id = InstructionID::Mul,
                 },
                 .operands = { left, right },
@@ -610,17 +714,23 @@ namespace LLVM
 
         Instruction* create_ret(Value* value)
         {
-            Instruction i = {
-                .base = {
-                    .value = Value::New(),
-                    .id = InstructionID::Ret,
-                },
-                .operands = { value },
-                .operand_count = 1,
-            };
+            if (!is_terminated())
+            {
 
-            return insert_at_end(i);
+                Instruction i = {
+                    .base = {
+                        .value = Value::New(TypeID::VoidType),
+                        .id = InstructionID::Ret,
+                    },
+                    .operands = { value },
+                    .operand_count = 1,
+                };
+
+                return insert_at_end(i);
+            }
+            return nullptr;
         }
+
         Instruction* create_ret_void()
         {
             RNS_NOT_IMPLEMENTED;
@@ -638,6 +748,27 @@ namespace LLVM
             entry_block->instructions.insert_at(i, next_alloca_index++);
             i->base.parent = entry_block;
             return i;
+        }
+
+        inline bool is_terminated()
+        {
+            assert(current);
+            assert(current->instructions.cap);
+            if (current->instructions.len)
+            {
+                auto& last_instruction = current->instructions[current->instructions.len - 1];
+                switch (last_instruction->base.id)
+                {
+                    case InstructionID::Br: case InstructionID::Ret:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+            else
+            {
+                return false;
+            }
         }
 
         inline Instruction* insert_at_end(Instruction instruction)
@@ -745,6 +876,7 @@ namespace LLVM
                 if (if_block != exit_block)
                 {
                     builder.append_to_function(if_block);
+                    builder.set_block(if_block);
                     do_node(allocator, builder, ast_if_block);
 
                     builder.create_br(exit_block);
@@ -753,6 +885,7 @@ namespace LLVM
                 if (else_block != exit_block)
                 {
                     builder.append_to_function(else_block);
+                    builder.set_block(else_block);
                     do_node(allocator, builder, ast_else_block);
 
                     builder.create_br(exit_block);
@@ -761,6 +894,7 @@ namespace LLVM
                 if (exit_block_in_use)
                 {
                     builder.append_to_function(exit_block);
+                    builder.set_block(exit_block);
                 }
             } break;
             case NodeType::Loop:
@@ -780,6 +914,7 @@ namespace LLVM
 
                 builder.create_br(loop_prefix_block);
                 builder.append_to_function(loop_prefix_block);
+                builder.set_block(loop_prefix_block);
 
                 assert(ast_loop_prefix->block.statements.len == 1);
                 auto* ast_condition = ast_loop_prefix->block.statements[0];
@@ -788,16 +923,19 @@ namespace LLVM
 
                 builder.create_conditional_br(loop_body_block, loop_end_block, condition);
                 builder.append_to_function(loop_body_block);
+                builder.set_block(loop_body_block);
 
                 do_node(allocator, builder, ast_loop_body);
 
                 builder.create_br(loop_postfix_block);
 
                 builder.append_to_function(loop_postfix_block);
+                builder.set_block(loop_postfix_block);
                 do_node(allocator, builder, ast_loop_postfix);
 
                 builder.create_br(loop_prefix_block);
                 builder.append_to_function(loop_end_block);
+                builder.set_block(loop_end_block);
             } break;
             case NodeType::Break:
             {
@@ -806,7 +944,12 @@ namespace LLVM
                 auto* jump_target = reinterpret_cast<BasicBlock*>(ast_jump_target->loop.exit_block);
                 assert(jump_target);
 
+                // @TODO: this may be buggy
+#if 0
                 emit_jump(allocator, builder, jump_target);
+#else
+                builder.create_br(jump_target);
+#endif
             } break;
             case NodeType::VarDecl:
             {
@@ -1021,15 +1164,35 @@ namespace LLVM
             // @TODO: change hardcoding
             slot_tracker.next_id = slot_tracker.starting_id = 1;
 
-            // print function:
             for (auto* block : function->basic_blocks)
             {
-                block->print(slot_tracker);
+                block->get_id(slot_tracker);
                 for (auto* instruction : block->instructions)
                 {
-                    instruction->print(slot_tracker);
+                    instruction->get_info(slot_tracker);
                 }
             }
+
+            for (auto* block : function->basic_blocks)
+            {
+                for (auto* instruction : block->instructions)
+                {
+                    if (instruction->base.id == InstructionID::Br)
+                    {
+                        instruction->get_info(slot_tracker);
+                    }
+                }
+            }
+
+            //// print function:
+            //for (auto* block : function->basic_blocks)
+            //{
+            //    block->print(slot_tracker);
+            //    for (auto* instruction : block->instructions)
+            //    {
+            //        instruction->print(slot_tracker);
+            //    }
+            //}
         }
     }
 }
