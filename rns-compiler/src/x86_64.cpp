@@ -5,13 +5,10 @@
 #include <RNS/os_internal.h>
 #include <RNS/profiler.h>
 
-#include "wasm_bytecode.h"
-
 #include <stdio.h>
 #include <string.h>
 #include <immintrin.h>
 #include <time.h>
-
 
 using namespace RNS;
 using ID = s64;
