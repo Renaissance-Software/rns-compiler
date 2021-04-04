@@ -897,6 +897,7 @@ namespace AST
             }
 
             function_node->function.type = nb.append(NodeType::TypeExpr, function_node);
+            function_node->function.type->type_expr.id = TypeID::FunctionType;
             function_node->function.type->type_expr.function_t = fn_type;
 
             if (compiler.errors_reported)

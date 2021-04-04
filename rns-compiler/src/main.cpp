@@ -11,7 +11,7 @@
 #define USE_LLVM 0
 #include <stdio.h>
 #include <stdlib.h>
-#define TEST_FILES 1
+#define TEST_FILES 0
 #include "test_files.h"
 #if TEST_FILES
 #undef USE_IMGUI
@@ -121,15 +121,15 @@ s32 rns_main(s32 argc, char* argv[])
 #endif
     RNS::String working_test_case =
         NEW_TEST(
-            foo :: (a: s32, b: s32) -> s32
+            add_one :: (n: &s32)
     {
-        return a + b;
+        @n = @n + 1;
     }
-    main :: () -> s32
+            main :: () -> s32
     {
-    a: s32 = 1;
-    b: s32 = 2;
-        return foo(a, b);
+        a: s32 = 5;
+        add_one(&a);
+        return a;
     }
     );
     bool result = compiler_workflow(working_test_case);

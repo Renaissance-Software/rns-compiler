@@ -420,35 +420,52 @@ namespace LLVM
                 {
                     Value* callee = operands[0];
                     assert(callee->typeID == TypeID::FunctionType);
+                    assert(callee->type);
                     printf("%%%llu = call i32 @%s(", id1, callee->name.ptr);
+
                     auto arg_count = operand_count - 1;
                     if (arg_count)
                     {
-                        char type_buffer[64];
-                        for (auto i = 1; i < arg_count; i++)
+                        auto print_arg = [](Value* operand)
                         {
-                            auto* operand = operands[i];
+                            char type_buffer[64];
+
                             if (operand->typeID == TypeID::LabelType)
                             {
                                 // @MaybeBuggy Here are interpreting this operand is a load, which might be not true
-                                printf("%s %%%llu, ", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id3);
+                                auto* instr = reinterpret_cast<Instruction*>(operand);
+                                assert(instr);
+                                switch (instr->base.id)
+                                {
+                                    case InstructionID::Alloca:
+                                    {
+                                        printf("%s %%%llu", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id1);
+                                    } break;
+                                    case InstructionID::Load:
+                                    {
+                                        printf("%s %%%llu", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id3);
+                                    } break;
+                                    default:
+                                        RNS_NOT_IMPLEMENTED;
+                                        break;
+                                }
                             }
                             else
                             {
                                 RNS_NOT_IMPLEMENTED;
                             }
+                        };
+
+                        for (auto i = 1; i < arg_count; i++)
+                        {
+                            auto* operand = operands[i];
+                            print_arg(operand);
+                            printf(", ");
                         }
                         auto* operand = operands[arg_count];
-                        if (operand->typeID == TypeID::LabelType)
-                        {
-                            // @MaybeBuggy Here are interpreting this operand is a load, which might be not true
-                            printf("%s %%%llu", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id3);
-                        }
-                        else
-                        {
-                            RNS_NOT_IMPLEMENTED;
-                        }
+                        print_arg(operand);
                     }
+
                     printf(")");
                 } break;
                 default:
@@ -907,7 +924,7 @@ namespace LLVM
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(TypeID::LabelType),
+                    .value = Value::New(TypeID::LabelType, {}, callee->type),
                     .id = InstructionID::Call,
                 },
             };
@@ -1193,10 +1210,11 @@ namespace LLVM
                         case NodeType::UnaryOp:
                         {
                             assert(ast_left->unary_op.type == UnaryOp::PointerDereference);
-                            auto* pointer_load = do_node(allocator, builder, ast_left);
 
                             auto* right_value = do_node(allocator, builder, ast_right);
                             assert(right_value);
+
+                            auto* pointer_load = do_node(allocator, builder, ast_left);
                             builder.create_store(right_value, pointer_load);
                         } break;
                         default:
@@ -1318,10 +1336,14 @@ namespace LLVM
                     assert(arg_count <= 15);
                     auto& node_arg_buffer = node->invoke_expr.arguments;
                     auto arg_i = 0;
+                    auto* function_type = function->value.type;
+                    assert(function_type);
                     for (auto* arg_node : node_arg_buffer)
                     {
                         auto* arg = do_node(allocator, builder, arg_node);
                         assert(arg);
+                        // @TODO: this may be buggy
+                        arg->type = function_type->function_t.arg_types[arg_i];
                         argument_buffer[arg_i++] = arg;
                     }
 
@@ -1410,7 +1432,9 @@ namespace LLVM
 
         for (auto& ast_current_function : function_declarations)
         {
-            Function::create(&module, &ast_current_function->function.type->type_expr, ast_current_function->function.name);
+            auto* function_type = &ast_current_function->function.type->type_expr;
+            assert(function_type->id == TypeID::FunctionType);
+            Function::create(&module, function_type, ast_current_function->function.name);
         }
 
         for (auto i = 0; i < function_declarations.len; i++)

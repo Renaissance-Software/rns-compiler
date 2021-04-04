@@ -197,4 +197,16 @@ const RNS::String test_files[] = {
         return @b;
     }
     ),
+        NEW_TEST(
+            foo :: (a: s32, b: s32) -> s32
+    {
+        return a + b;
+    }
+    main :: () -> s32
+    {
+    a: s32 = 1;
+    b: s32 = 2;
+        return foo(a, b);
+    }
+    ),
 };
