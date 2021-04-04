@@ -170,4 +170,15 @@ const RNS::String test_files[] = {
     }
 
     ),
+        NEW_TEST(
+    foo :: () -> s32
+    {
+        return 5;
+    }
+    main :: () -> s32
+    {
+        a: s32 = foo() + 1;
+        return a + foo();
+    }
+    ),
 };

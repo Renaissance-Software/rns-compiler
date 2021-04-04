@@ -90,6 +90,22 @@ Type* Typing::Type::get(RNS::String name)
     return nullptr;
 }
 
+Type* Typing::Type::get_pointer_type(Type* type)
+{
+    assert(type);
+
+    Type pointer_type = {
+        .id = TypeID::PointerType,
+        .name = {}, // no name
+        .pointer_t = {
+            .appointee = type,
+        }
+    };
+
+    auto* result = type_buffer.append(pointer_type);
+    return result;
+}
+
 Type* Typing::Type::get_label()
 {
     return Type::get(StringFromCStringLiteral("label"));

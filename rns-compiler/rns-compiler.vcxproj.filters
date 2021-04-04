@@ -2,14 +2,22 @@
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
-    <ClCompile Include="dependencies\rns-lib\lib\src\os.cpp" />
-    <ClCompile Include="dependencies\rns-lib\lib\src\data_structures.cpp" />
     <ClCompile Include="src\lexer.cpp" />
     <ClCompile Include="src\parser.cpp" />
     <ClCompile Include="src\x86_64.cpp" />
     <ClCompile Include="src\llvm_bytecode.cpp" />
     <ClCompile Include="src\typechecker.cpp" />
     <ClCompile Include="src\compiler_types.cpp" />
+    <ClCompile Include="..\dependencies\rns-lib\lib\src\data_structures.cpp" />
+    <ClCompile Include="..\dependencies\rns-lib\lib\src\os.cpp" />
+    <ClCompile Include="src\my_imgui.cpp" />
+    <ClCompile Include="..\dependencies\imgui-1.81\backends\imgui_impl_opengl3.cpp" />
+    <ClCompile Include="..\dependencies\imgui-1.81\backends\imgui_impl_sdl.cpp" />
+    <ClCompile Include="..\dependencies\imgui-1.81\imgui.cpp" />
+    <ClCompile Include="..\dependencies\imgui-1.81\imgui_demo.cpp" />
+    <ClCompile Include="..\dependencies\imgui-1.81\imgui_draw.cpp" />
+    <ClCompile Include="..\dependencies\imgui-1.81\imgui_tables.cpp" />
+    <ClCompile Include="..\dependencies\imgui-1.81\imgui_widgets.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\lexer.h" />
@@ -17,16 +25,25 @@
     <ClInclude Include="src\compiler_types.h" />
     <ClInclude Include="src\x86_64_encoding.h" />
     <ClInclude Include="src\x86_64.h" />
-    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\profiler.h" />
     <ClInclude Include="src\llvm_bytecode.h" />
     <ClInclude Include="src\typechecker.h" />
-    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\arch.h" />
-    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\c_containers.h" />
-    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\compiler.h" />
-    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\data_structures.h" />
-    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\os.h" />
-    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\os_internal.h" />
-    <ClInclude Include="dependencies\rns-lib\lib\include\RNS\types.h" />
+    <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\arch.h" />
+    <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\compiler.h" />
+    <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\c_containers.h" />
+    <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\data_structures.h" />
+    <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\os.h" />
+    <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\os_internal.h" />
+    <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\profiler.h" />
+    <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\types.h" />
+    <ClInclude Include="src\my_imgui.h" />
+    <ClInclude Include="..\dependencies\imgui-1.81\backends\imgui_impl_opengl3.h" />
+    <ClInclude Include="..\dependencies\imgui-1.81\backends\imgui_impl_sdl.h" />
+    <ClInclude Include="..\dependencies\imgui-1.81\imconfig.h" />
+    <ClInclude Include="..\dependencies\imgui-1.81\imgui.h" />
+    <ClInclude Include="..\dependencies\imgui-1.81\imgui_internal.h" />
+    <ClInclude Include="..\dependencies\imgui-1.81\imstb_rectpack.h" />
+    <ClInclude Include="..\dependencies\imgui-1.81\imstb_textedit.h" />
+    <ClInclude Include="..\dependencies\imgui-1.81\imstb_truetype.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="src\test_files.h" />

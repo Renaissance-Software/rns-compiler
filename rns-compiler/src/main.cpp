@@ -7,9 +7,19 @@
 #include <RNS/profiler.h>
 
 
+#define USE_IMGUI 0
 #define USE_LLVM 0
 #include <stdio.h>
 #include <stdlib.h>
+#define TEST_FILES 0
+#include "test_files.h"
+#if TEST_FILES
+#undef USE_IMGUI
+#define USE_IMGUI 0
+#endif
+#if USE_IMGUI
+#include "my_imgui.h"
+#endif
 
 #include "compiler_types.h"
 #include "typechecker.h"
@@ -83,7 +93,6 @@ bool compiler_workflow(RNS::String file)
     return true;
 }
 
-#include "test_files.h"
 
 s32 rns_main(s32 argc, char* argv[])
 {
@@ -91,7 +100,9 @@ s32 rns_main(s32 argc, char* argv[])
     PerformanceAPI_BeginEvent("Main function", nullptr, PERFORMANCEAPI_DEFAULT_COLOR);
 #endif
 
-#define TEST_FILES 0
+#if USE_IMGUI
+    imgui_init();
+#endif
 #if TEST_FILES
     for (auto i = 0; i < rns_array_length(test_files); i++)
     {
@@ -110,17 +121,13 @@ s32 rns_main(s32 argc, char* argv[])
 #endif
     RNS::String working_test_case =
         NEW_TEST(
-            foo :: () -> s32
+            main :: ()
     {
-        return 5;
+        a: s32 = 5;
+        b: &s32 = &a;
+        @b = 6;
     }
-            main :: () -> s32
-    {
-            a: s32 = foo() + 1;
-                return a + foo();
-    }
-
-        );
+    );
 
     bool result = compiler_workflow(working_test_case);
     if (result)

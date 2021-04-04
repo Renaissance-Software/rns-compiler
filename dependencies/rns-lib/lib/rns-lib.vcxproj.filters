@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="include\RNS\arch.h" />
+    <ClInclude Include="include\RNS\c_containers.h" />
+    <ClInclude Include="include\RNS\compiler.h" />
+    <ClInclude Include="include\RNS\cpp_containers.h" />
+    <ClInclude Include="include\RNS\os.h" />
+    <ClInclude Include="include\RNS\types.h" />
+    <ClInclude Include="include\RNS\os_internal.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\os.c" />
+    <ClCompile Include="src\cpp_containers.cpp" />
+    <ClCompile Include="src\main.cpp" />
+  </ItemGroup>
+</Project>

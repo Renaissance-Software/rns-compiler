@@ -308,6 +308,28 @@ namespace LLVM
         }
     };
 
+    const char* type_to_string(Type* type, char* buffer)
+    {
+        assert(type);
+        switch (type->id)
+        {
+            case TypeID::PointerType:
+            {
+                char aux_buffer[64];
+                sprintf(buffer, "%s*", type_to_string(type->pointer_t.appointee, aux_buffer));
+            } break;
+            case TypeID::IntegerType:
+            {
+                auto bits = type->integer_t.bits;
+                sprintf(buffer, "i%u", bits);
+            } break;
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
+        }
+        return (const char*)buffer;
+    }
+
     struct Instruction
     {
         struct
@@ -335,13 +357,14 @@ namespace LLVM
             char operand0[64] = {};
             char operand1[64] = {};
             char operand2[64] = {};
+            char type_buffer[64];
 
             printf("\t");
             switch (base.id)
             {
                 case InstructionID::Alloca:
                 {
-                    printf("%%%llu = alloca i32, align 4", id1);
+                    printf("%%%llu = alloca %s, align 4", id1, type_to_string(alloca_i.allocated_type->pointer_t.appointee, type_buffer));
                 } break;
                 case InstructionID::Store:
                 {
@@ -630,6 +653,7 @@ namespace LLVM
         bool conditional_alloca;
         // @TODO: this should be taken into account in every branch statement
         bool emitted_return;
+        bool explicit_return;
         /**/
 
         // @TODO: guarantee pointer stability
@@ -641,7 +665,7 @@ namespace LLVM
                     .id = InstructionID::Alloca,
                 },
                 .alloca_i = {
-                    .allocated_type = PointerType::get(type),
+                    .allocated_type = Type::get_pointer_type(type),
                 }
             };
 
@@ -1097,15 +1121,31 @@ namespace LLVM
 
                 if (binary_op_type == BinOp::Assign)
                 {
-                    assert(ast_left->type == NodeType::VarExpr);
-                    auto* var_decl = ast_left->var_expr.mentioned;
-                    assert(var_decl);
-                    auto* alloca_value = var_decl->var_decl.backend_ref;
-                    auto* var_type = var_decl->var_decl.type;
+                    switch (ast_left->type)
+                    {
+                        case NodeType::VarExpr:
+                        {
+                            auto* var_decl = ast_left->var_expr.mentioned;
+                            assert(var_decl);
+                            auto* alloca_value = var_decl->var_decl.backend_ref;
+                            auto* var_type = var_decl->var_decl.type;
 
-                    auto* right_value = do_node(allocator, builder, ast_right, var_type);
-                    assert(right_value);
-                    builder.create_store(right_value, reinterpret_cast<Value*>(alloca_value));
+                            auto* right_value = do_node(allocator, builder, ast_right, var_type);
+                            assert(right_value);
+                            builder.create_store(right_value, reinterpret_cast<Value*>(alloca_value));
+                        } break;
+                        case NodeType::UnaryOp:
+                        {
+                            assert(ast_left->unary_op.type == UnaryOp::PointerDereference);
+                            auto* pointer_load = do_node(allocator, builder, ast_left);
+
+                            auto* right_value = do_node(allocator, builder, ast_right);
+                            assert(right_value);
+                            builder.create_store(right_value, pointer_load);
+                        } break;
+                        default:
+                            RNS_UNREACHABLE;
+                    }
                 }
                 else
                 {
@@ -1166,6 +1206,7 @@ namespace LLVM
                 // @TODO: tolerate this in the future?
                 assert(!builder.emitted_return);
                 builder.emitted_return = true;
+                builder.explicit_return = true;
                 auto* ast_return_expression = node->ret.expr;
                 if (ast_return_expression)
                 {
@@ -1203,6 +1244,46 @@ namespace LLVM
 
                 auto* call = builder.create_call(reinterpret_cast<Value*>(function));
                 return reinterpret_cast<Value*>(call);
+            } break;
+            case NodeType::UnaryOp:
+            {
+                assert(node->unary_op.pos == UnaryOpType::Prefix);
+                auto unary_op_type = node->unary_op.type;
+                auto* unary_op_expr = node->unary_op.node;
+                assert(unary_op_expr);
+
+                switch (unary_op_type)
+                {
+                    case UnaryOp::AddressOf:
+                    {
+                        assert(unary_op_expr->type == NodeType::VarExpr);
+                        auto* ref_var_decl = unary_op_expr->var_expr.mentioned;
+                        assert(ref_var_decl);
+                        assert(ref_var_decl->type == NodeType::VarDecl);
+                        auto* ref_var_decl_type = ref_var_decl->var_decl.type;
+                        assert(ref_var_decl_type);
+                        auto* var_alloca = reinterpret_cast<Value*>(ref_var_decl->var_decl.backend_ref);
+                        assert(var_alloca);
+                        return var_alloca;
+                    } break;
+                    case UnaryOp::PointerDereference:
+                    {
+                        assert(unary_op_expr->type == NodeType::VarExpr);
+                        auto* pointer_to_dereference_decl = unary_op_expr->var_expr.mentioned;
+                        assert(pointer_to_dereference_decl);
+                        assert(pointer_to_dereference_decl->type == NodeType::VarDecl);
+                        auto* pointer_type = pointer_to_dereference_decl->var_decl.type;
+                        assert(pointer_type);
+                        assert(pointer_type->id == TypeID::PointerType);
+                        auto* pointer_alloca = reinterpret_cast<Value*>(pointer_to_dereference_decl->var_decl.backend_ref);
+                        assert(pointer_alloca);
+                        auto* pointer_load = builder.create_load(pointer_type, pointer_alloca);
+                        return reinterpret_cast<Value*>(pointer_load);
+                    } break;
+                    default:
+                        RNS_NOT_IMPLEMENTED;
+                        break;
+                }
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
@@ -1250,50 +1331,48 @@ namespace LLVM
             auto ret_type = builder.function->value.type->function_t.ret_type;
 
             bool ret_type_void = ret_type->id == TypeID::VoidType;
-            if (!ret_type_void)
-            {
-                builder.conditional_alloca = false;
+            builder.explicit_return = false;
 
-                for (auto* st_node : ast_main_scope_statements)
+            for (auto* st_node : ast_main_scope_statements)
+            {
+                if (st_node->type == NodeType::Conditional)
                 {
-                    if (st_node->type == NodeType::Conditional)
+                    if (introspect_for_conditional_allocas(st_node->conditional.if_block))
                     {
-                        if (introspect_for_conditional_allocas(st_node->conditional.if_block))
-                        {
-                            builder.conditional_alloca = true;
-                            break;
-                        }
-                        if (introspect_for_conditional_allocas(st_node->conditional.else_block))
-                        {
-                            builder.conditional_alloca = true;
-                            break;
-                        }
+                        builder.explicit_return = true;
+                        break;
                     }
-                    else if (st_node->type == NodeType::Loop)
+                    if (introspect_for_conditional_allocas(st_node->conditional.else_block))
                     {
-                        if (introspect_for_conditional_allocas(st_node->loop.body))
-                        {
-                            builder.conditional_alloca = true;
-                            break;
-                        }
+                        builder.explicit_return = true;
+                        break;
                     }
-                    // @Warning: here we need to comtemplate other cases which imply new blocks
                 }
+                else if (st_node->type == NodeType::Loop)
+                {
+                    if (introspect_for_conditional_allocas(st_node->loop.body))
+                    {
+                        builder.explicit_return = true;
+                        break;
+                    }
+                }
+                // @Warning: here we need to comtemplate other cases which imply new blocks
             }
+            builder.conditional_alloca = !ret_type_void && builder.explicit_return;
 
             //auto alloca_count = arg_count + ast_current_function->function.variables.len + conditional_alloca;
 
             // @TODO: reserve as many position as 'alloca_count' in the main basic block, displace the len by that offset and write the rest of instructions there.
             // Alloca can have their special insertion entry point
             // @WARNING: this would imply we could fail with non-optimized build dead code elimination
+
+            if (builder.explicit_return)
+            {
+                builder.exit_block = builder.create_block(&llvm_allocator);
+            }
             if (builder.conditional_alloca)
             {
                 builder.return_alloca = builder.create_alloca(ret_type);
-                builder.exit_block = builder.create_block(&llvm_allocator);
-            }
-            else if (ret_type_void)
-            {
-                builder.exit_block = builder.create_block(&llvm_allocator);
             }
 
             // Arguments
@@ -1322,21 +1401,24 @@ namespace LLVM
             }
             else if (ret_type_void)
             {
-                if (builder.current->instructions.len == 0)
+                if (builder.explicit_return)
                 {
-                    auto* saved_current = builder.set_block(builder.exit_block);
-                    assert(saved_current);
-                    auto index = builder.function->basic_blocks.get_id_if_ref_buffer(saved_current);
-                    // @Info: this is a no-statements function.
-                    // @TODO: not create a basic block if the function has no statements
-                    assert(index == 0);
-                    builder.function->basic_blocks[index] = builder.current;
-                    builder.current->parent = builder.function;
-                }
-                else
-                {
-                    builder.append_to_function(builder.exit_block);
-                    builder.set_block(builder.exit_block);
+                    if (builder.current->instructions.len == 0)
+                    {
+                        auto* saved_current = builder.set_block(builder.exit_block);
+                        assert(saved_current);
+                        auto index = builder.function->basic_blocks.get_id_if_ref_buffer(saved_current);
+                        // @Info: this is a no-statements function.
+                        // @TODO: not create a basic block if the function has no statements
+                        assert(index == 0);
+                        builder.function->basic_blocks[index] = builder.current;
+                        builder.current->parent = builder.function;
+                    }
+                    else
+                    {
+                        builder.append_to_function(builder.exit_block);
+                        builder.set_block(builder.exit_block);
+                    }
                 }
 
                 builder.create_ret_void();

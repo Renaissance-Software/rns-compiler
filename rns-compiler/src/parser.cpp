@@ -203,9 +203,27 @@ namespace AST
             {
                 RNS_NOT_IMPLEMENTED;
             }
-            else
+            else if (t->get_id() == TokenID::Ampersand)
             {
-                RNS_UNREACHABLE;
+                auto* type_name = expect_and_consume(TokenID::Type);
+                if (type_name)
+                {
+                    auto* type = type_name->type;
+                    assert(type);
+                    return Type::get_pointer_type(type);
+                }
+                else
+                {
+                    type_name = expect_and_consume(TokenID::Symbol);
+                    if (type_name)
+                    {
+                        RNS_NOT_IMPLEMENTED;
+                    }
+                    else
+                    {
+                        compiler.print_error({}, "Couldn't find type for pointer type");
+                    }
+                }
             }
 
             return nullptr;
@@ -329,6 +347,26 @@ namespace AST
                     assert(parenthesis_expr->type == NodeType::BinOp);
                     parenthesis_expr->bin_op.parenthesis = true;
                     return parenthesis_expr;
+                } break;
+                case TokenID::Ampersand:
+                {
+                    consume();
+                    auto* addressof_node = nb.append(NodeType::UnaryOp, parent);
+                    addressof_node->unary_op.type = UnaryOp::AddressOf;
+                    addressof_node->unary_op.pos = UnaryOpType::Prefix;
+                    addressof_node->unary_op.node = parse_expression(addressof_node);
+
+                    return addressof_node;
+                } break;
+                case TokenID::At:
+                {
+                    consume();
+                    auto* p_dereference_node = nb.append(NodeType::UnaryOp, parent);
+                    p_dereference_node->unary_op.type = UnaryOp::PointerDereference;
+                    p_dereference_node->unary_op.pos = UnaryOpType::Prefix;
+                    p_dereference_node->unary_op.node = parse_primary_expression(p_dereference_node);
+
+                    return p_dereference_node;
                 } break;
                 case TokenID::Semicolon:
                     return nullptr;
@@ -567,6 +605,11 @@ namespace AST
                 {
                     statement = parse_expression(parent);
                 } break;
+                case TokenID::At:
+                {
+                    // @Info: pointer dereference
+                    statement = parse_expression(parent);
+                } break;
                 case TokenID::RightBrace:
                     break;
                 default:
@@ -648,7 +691,7 @@ namespace AST
                 Token* t;
                 Node* var_decl_node = left;
 
-                if ((t = expect_and_consume(TokenID::Type)) || (t = expect_and_consume(TokenID::Symbol)))
+                if ((t = expect_and_consume(TokenID::Type)) || (t = expect_and_consume(TokenID::Symbol)) || (t = expect_and_consume(TokenID::Ampersand))) // Ampersand = pointer
                 {
                     var_decl_node->var_decl.type = get_type(t);
                 }

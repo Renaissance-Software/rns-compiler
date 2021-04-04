@@ -8,6 +8,13 @@ using RNS::Allocator;
 
 extern "C" s32 printf(const char*, ...);
 
+enum class UnaryOp
+{
+    None,
+    AddressOf,
+    PointerDereference,
+};
+
 enum class BinOp
 {
     None,
@@ -149,12 +156,8 @@ namespace Typing
     struct PointerType
     {
         Type* appointee;
-        u16 bits;
-
-        static Type* get(Type* appointee)
-        {
-            return nullptr;
-        }
+        // @TODO: come back here if we want to diminish pointers memory footprint
+        // u16 bits;
     };
 
     struct Type
@@ -168,11 +171,13 @@ namespace Typing
             UnionType union_t;
             EnumType enum_t;
             FunctionType function_t;
+            PointerType pointer_t;
         };
 
         static TypeBuffer type_buffer;
         static void init(Allocator* allocator, s64 count);
         static Type* get(RNS::String name);
+        static Type* get_pointer_type(Type* type);
         static Type* get_void_type();
         static Type* get_integer_type(u16 bits, bool is_signed);
         static Type* get_label();
@@ -191,8 +196,6 @@ namespace Typing
 using namespace Typing;
 namespace Lexer
 {
-
-
     enum class TokenID : u8
     {
         /* These are names */
@@ -403,6 +406,7 @@ namespace AST
     enum class NodeType
     {
         IntLit,
+        UnaryOp,
         BinOp,
         Ret,
         VarDecl,
@@ -416,7 +420,20 @@ namespace AST
         TypeExpr,
     };
 
-    struct BinaryOp
+    enum class UnaryOpType
+    {
+        Prefix,
+        Postfix,
+    };
+
+    struct UnaryOperation
+    {
+        UnaryOp type;
+        UnaryOpType pos;
+        Node* node;
+    };
+
+    struct BinaryOperation
     {
         Node* left;
         Node* right;
@@ -508,7 +525,8 @@ namespace AST
         union
         {
             ConstantInt int_lit;
-            BinaryOp bin_op;
+            UnaryOperation unary_op;
+            BinaryOperation bin_op;
             RetExpr ret;
             VarDecl var_decl;
             VarExpr var_expr;
