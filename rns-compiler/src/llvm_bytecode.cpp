@@ -424,7 +424,7 @@ namespace LLVM
                     auto ret_type_not_void = callee->type->function_t.ret_type->id != TypeID::VoidType;
                     if (ret_type_not_void)
                     {
-                        printf("%%%llu =", id1);
+                        printf("%%%llu = ", id1);
                     }
                     printf("call i32 @%s(", callee->name.ptr);
 

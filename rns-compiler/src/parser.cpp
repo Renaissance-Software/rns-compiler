@@ -874,16 +874,7 @@ namespace AST
 
             if (expect_and_consume('-') && expect_and_consume('>'))
             {
-                auto* t = expect_and_consume(TokenID::Type);
-                if (!t)
-                {
-                    t = expect_and_consume(TokenID::Symbol);
-                }
-                if (!t)
-                {
-                    compiler.print_error({}, "Expected return type");
-                    return nullptr;
-                }
+                auto* t = consume();
                 fn_type.ret_type = get_type(t);
                 if (!fn_type.ret_type)
                 {
