@@ -209,4 +209,23 @@ const RNS::String test_files[] = {
         return foo(a, b);
     }
     ),
+        NEW_TEST(
+            add_one :: (n: &s32)
+    {
+        if @n == 2
+        {
+            @n = @n + 1;
+        }
+        else
+        {
+            @n = @n - 1;
+        }
+    }
+    main :: () -> s32
+    {
+        a: s32 = 5;
+        add_one(&a);
+        return a;
+    }
+    ),
 };

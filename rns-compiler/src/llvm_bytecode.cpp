@@ -421,7 +421,12 @@ namespace LLVM
                     Value* callee = operands[0];
                     assert(callee->typeID == TypeID::FunctionType);
                     assert(callee->type);
-                    printf("%%%llu = call i32 @%s(", id1, callee->name.ptr);
+                    auto ret_type_not_void = callee->type->function_t.ret_type->id != TypeID::VoidType;
+                    if (ret_type_not_void)
+                    {
+                        printf("%%%llu =", id1);
+                    }
+                    printf("call i32 @%s(", callee->name.ptr);
 
                     auto arg_count = operand_count - 1;
                     if (arg_count)

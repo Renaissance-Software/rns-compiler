@@ -6,11 +6,11 @@
 #include <RNS/data_structures.h>
 #include <RNS/profiler.h>
 
+#include <stdio.h>
+#include <stdlib.h>
 
 #define USE_IMGUI 0
 #define USE_LLVM 0
-#include <stdio.h>
-#include <stdlib.h>
 #define TEST_FILES 0
 #include "test_files.h"
 #if TEST_FILES
@@ -121,16 +121,7 @@ s32 rns_main(s32 argc, char* argv[])
 #endif
     RNS::String working_test_case =
         NEW_TEST(
-            add_one :: (n: &s32)
-    {
-        @n = @n + 1;
-    }
-            main :: () -> s32
-    {
-        a: s32 = 5;
-        add_one(&a);
-        return a;
-    }
+            main :: () {}
     );
     bool result = compiler_workflow(working_test_case);
     if (result)
