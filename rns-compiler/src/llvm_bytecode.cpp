@@ -1205,11 +1205,12 @@ namespace LLVM
             {
                 // @TODO: tolerate this in the future?
                 assert(!builder.emitted_return);
-                builder.emitted_return = true;
-                builder.explicit_return = true;
                 auto* ast_return_expression = node->ret.expr;
                 if (ast_return_expression)
                 {
+                    builder.emitted_return = true;
+                    builder.explicit_return = true;
+
                     assert(ast_return_expression);
                     auto* ret_value = do_node(allocator, builder, ast_return_expression);
 
@@ -1227,7 +1228,16 @@ namespace LLVM
                 }
                 else
                 {
-                    builder.create_br(builder.exit_block);
+                    if (!builder.explicit_return)
+                    {
+                        builder.create_ret_void();
+                    }
+                    else
+                    {
+                        builder.create_br(builder.exit_block);
+                        builder.emitted_return = true;
+                        builder.explicit_return = true;
+                    }
                 }
             } break;
             case NodeType::InvokeExpr:

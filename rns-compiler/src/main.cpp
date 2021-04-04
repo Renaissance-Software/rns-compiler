@@ -11,7 +11,7 @@
 #define USE_LLVM 0
 #include <stdio.h>
 #include <stdlib.h>
-#define TEST_FILES 0
+#define TEST_FILES 1
 #include "test_files.h"
 #if TEST_FILES
 #undef USE_IMGUI
@@ -125,7 +125,14 @@ s32 rns_main(s32 argc, char* argv[])
     {
         a: s32 = 5;
         b: &s32 = &a;
-        @b = 6;
+        if @b == 5
+        {
+            @b = 6;
+        }
+        else
+        {
+            @b = 3;
+        }
         return @b;
     }
     );
