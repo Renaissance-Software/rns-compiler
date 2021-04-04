@@ -121,11 +121,12 @@ s32 rns_main(s32 argc, char* argv[])
 #endif
     RNS::String working_test_case =
         NEW_TEST(
-            main :: ()
+            main :: () -> s32
     {
         a: s32 = 5;
         b: &s32 = &a;
         @b = 6;
+        return @b;
     }
     );
 

@@ -32,6 +32,12 @@ enum class BinOp
     Count,
 };
 
+enum class ValueType
+{
+    RValue,
+    LValue,
+};
+
 inline bool is_cmp_binop(BinOp binop)
 {
     return binop >= BinOp::Cmp_Equal && binop <= BinOp::Cmp_GreaterThanOrEqual;
@@ -522,6 +528,7 @@ namespace AST
     {
         Node* parent;
         NodeType type;
+        ValueType value_type;
         union
         {
             ConstantInt int_lit;
@@ -553,6 +560,11 @@ namespace AST
             Node* result = &ptr[len++];
             result->type = type;
             result->parent = parent;
+            if (type == NodeType::VarDecl)
+            {
+                result->value_type = ValueType::LValue;
+            }
+
             return result;
         }
     };

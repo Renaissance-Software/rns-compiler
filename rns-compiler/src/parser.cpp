@@ -528,6 +528,7 @@ namespace AST
                 current_scope = for_loop->loop.postfix;
                 current_scope->block.statements = current_scope->block.statements.create(&allocator, 1);
                 Node* var_expr = nb.append(NodeType::VarExpr, current_scope);
+                var_expr->value_type = ValueType::LValue;
                 var_expr->var_expr.mentioned = it_decl;
                 Node* one_lit = nb.append(NodeType::IntLit, current_scope);
                 one_lit->int_lit.bit_count = 32;
@@ -642,6 +643,10 @@ namespace AST
             {
                 assert(bin_op != BinOp::VariableDecl);
                 auto* binary_op_left_expression = *left_expr;
+                if (bin_op == BinOp::Assign)
+                {
+                    binary_op_left_expression->value_type = ValueType::LValue;
+                }
                 auto* binary_op_right_expression = parse_primary_expression(parent);
 
                 if (!binary_op_right_expression)

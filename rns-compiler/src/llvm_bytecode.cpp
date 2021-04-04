@@ -1222,7 +1222,6 @@ namespace LLVM
                     }
                     else
                     {
-                        // @TODO: check type
                         builder.create_ret(ret_value);
                     }
                 }
@@ -1268,17 +1267,37 @@ namespace LLVM
                     } break;
                     case UnaryOp::PointerDereference:
                     {
-                        assert(unary_op_expr->type == NodeType::VarExpr);
-                        auto* pointer_to_dereference_decl = unary_op_expr->var_expr.mentioned;
-                        assert(pointer_to_dereference_decl);
-                        assert(pointer_to_dereference_decl->type == NodeType::VarDecl);
-                        auto* pointer_type = pointer_to_dereference_decl->var_decl.type;
-                        assert(pointer_type);
-                        assert(pointer_type->id == TypeID::PointerType);
-                        auto* pointer_alloca = reinterpret_cast<Value*>(pointer_to_dereference_decl->var_decl.backend_ref);
-                        assert(pointer_alloca);
-                        auto* pointer_load = builder.create_load(pointer_type, pointer_alloca);
-                        return reinterpret_cast<Value*>(pointer_load);
+                        if (node->value_type == ValueType::LValue)
+                        {
+                            assert(unary_op_expr->type == NodeType::VarExpr);
+                            auto* pointer_to_dereference_decl = unary_op_expr->var_expr.mentioned;
+                            assert(pointer_to_dereference_decl);
+                            assert(pointer_to_dereference_decl->type == NodeType::VarDecl);
+                            auto* pointer_type = pointer_to_dereference_decl->var_decl.type;
+                            assert(pointer_type);
+                            assert(pointer_type->id == TypeID::PointerType);
+                            auto* pointer_alloca = reinterpret_cast<Value*>(pointer_to_dereference_decl->var_decl.backend_ref);
+                            assert(pointer_alloca);
+                            auto* pointer_load = builder.create_load(pointer_type, pointer_alloca);
+                            return reinterpret_cast<Value*>(pointer_load);
+                        }
+                        else
+                        {
+                            assert(unary_op_expr->type == NodeType::VarExpr);
+                            auto* pointer_to_dereference_decl = unary_op_expr->var_expr.mentioned;
+                            assert(pointer_to_dereference_decl);
+                            assert(pointer_to_dereference_decl->type == NodeType::VarDecl);
+                            auto* pointer_type = pointer_to_dereference_decl->var_decl.type;
+                            assert(pointer_type);
+                            assert(pointer_type->id == TypeID::PointerType);
+                            auto* pointer_alloca = reinterpret_cast<Value*>(pointer_to_dereference_decl->var_decl.backend_ref);
+                            assert(pointer_alloca);
+                            auto* pointer_load = builder.create_load(pointer_type, pointer_alloca);
+                            auto* deref_type = pointer_type->pointer_t.appointee;
+                            assert(deref_type);
+                            auto* deref_expr = builder.create_load(deref_type, reinterpret_cast<Value*>(pointer_load));
+                            return reinterpret_cast<Value*>(deref_expr);
+                        }
                     } break;
                     default:
                         RNS_NOT_IMPLEMENTED;
