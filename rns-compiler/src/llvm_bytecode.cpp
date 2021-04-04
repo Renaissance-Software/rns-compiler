@@ -101,52 +101,11 @@ namespace LLVM
         Freeze = 67,
     };
 
-    struct IDManager
-    {
-        static Buffer<String> names;
-        static StringBuffer buffer;
-        static IDType next_id;
-
-        static IDType append(const char* name = nullptr, u32 name_len = 0)
-        {
-            auto id = next_id++;
-            if (name)
-            {
-                if (name_len == 0)
-                {
-                    name_len = strlen(name);
-                }
-                if (name > 0)
-                {
-                    auto allocated_name = buffer.append(name, name_len);
-                    String new_string = {
-                        .ptr = allocated_name,
-                        .len = name_len,
-                    };
-                    names.append(new_string);
-                    return id;
-                }
-            }
-
-            names.append({});
-            return id;
-        }
-
-        static void init(Allocator* allocator, s64 name_count, s64 string_buffer_capacity)
-        {
-            names = names.create(allocator, name_count);
-            buffer = buffer.create(allocator, string_buffer_capacity);
-        }
-    };
-    Buffer<String> IDManager::names;
-    StringBuffer IDManager::buffer;
-    IDType IDManager::next_id;
-
     struct SlotTracker;
     struct Value
     {
-        Type* type;
         // @TODO: undo this mess
+        Type* type;
         TypeID typeID;
         RNS::String name;
 
@@ -1429,7 +1388,6 @@ namespace LLVM
         RNS_PROFILE_FUNCTION();
         compiler.subsystem = Compiler::Subsystem::IR;
         auto llvm_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(50));
-        IDManager::init(&llvm_allocator, 1024, 1024 * 16);
         Module module = module.create(&llvm_allocator);
         BasicBlockBuffer basic_block_buffer = basic_block_buffer.create(&llvm_allocator, 1024);
         InstructionBuffer instruction_buffer = instruction_buffer.create(&llvm_allocator, 1024 * 16);

@@ -333,10 +333,6 @@ namespace Lexer
 
     struct Token
     {
-        u32 id : 7;
-        u32 start : 25;
-        u16 offset;
-        u16 line;
         union
         {
             u64 int_lit;
@@ -348,6 +344,13 @@ namespace Lexer
             Type* type;
             IntrinsicID intrinsic;
         };
+
+        u64 start;
+        u32 line;
+        u32 column;
+        u32 offset;
+
+        TokenID id;
 
         inline TokenID get_id()
         {
@@ -390,6 +393,7 @@ namespace Lexer
             }
         }
     };
+    static_assert(sizeof(Token) == 4 * (sizeof(u64)));
 
     struct LexerResult
     {
@@ -607,7 +611,7 @@ namespace RNS
         RNS::Allocator page_allocator;
         RNS::Allocator common_allocator;
         Subsystem subsystem;
-        bool errors_reported;
+        u32 errors_reported;
 
         void print_error(MetaContext context, const char* message, ...);
     };

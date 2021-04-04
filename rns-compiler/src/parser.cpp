@@ -46,7 +46,7 @@ namespace AST
             Token* t = get_next_token();
             if (t)
             {
-                if (t->id == static_cast<u8>(id))
+                if (t->id == static_cast<TokenID>(id))
                 {
                     return t;
                 }
@@ -82,7 +82,7 @@ namespace AST
         {
             Token* t1 = get_next_token(0);
             Token* t2 = get_next_token(1);
-            bool result = (t1 && t1->id == static_cast<u8>(id1) && t2 && t2->id == static_cast<u8>(id2));
+            bool result = (t1 && t1->id == static_cast<TokenID>(id1) && t2 && t2->id == static_cast<TokenID>(id2));
             if (result)
             {
                 consume(); consume();
@@ -297,7 +297,7 @@ namespace AST
                         var_decl_node->var_decl.name.len = t->offset;
                         return var_decl_node;
                     }
-                    else if (get_next_token()->id == '(')
+                    else if ((u32)get_next_token()->id == '(')
                     {
                         auto* invoke_expr_node = nb.append(NodeType::InvokeExpr, parent);
                         invoke_expr_node->invoke_expr.expr = find_existing_invoke_expression(t);
@@ -769,7 +769,7 @@ namespace AST
             Token* next_token;
             if (has_braces)
             {
-                bool statement_left_to_parse = (next_token = get_next_token())->id != expected_end;
+                bool statement_left_to_parse = (next_token = get_next_token())->id != (TokenID)expected_end;
                 if (statement_left_to_parse)
                 {
                     scope_block->block.statements = scope_block->block.statements.create(&allocator, 64);
@@ -785,7 +785,7 @@ namespace AST
                         return;
                     }
                     scope_block->block.statements.append(statement);
-                    statement_left_to_parse = (next_token = get_next_token())->id != expected_end;
+                    statement_left_to_parse = (next_token = get_next_token())->id != (TokenID)expected_end;
                 }
 
                 expect_and_consume(expected_end);
@@ -831,7 +831,7 @@ namespace AST
             FunctionType fn_type = {};
 
             Token* next_token;
-            bool arg_left_to_parse = (next_token = get_next_token())->id != ')';
+            bool arg_left_to_parse = (next_token = get_next_token())->id != (TokenID)')';
 
             s64 allocated_arg_count = 32;
             
@@ -858,7 +858,7 @@ namespace AST
                 node->var_decl.is_fn_arg = true;
                 fn_type.arg_types.append(node->var_decl.type);
                 function_node->function.arguments.append(node);
-                arg_left_to_parse = (next_token = get_next_token())->id != ')';
+                arg_left_to_parse = (next_token = get_next_token())->id != (TokenID)')';
                 if (arg_left_to_parse)
                 {
                     auto* comma = expect_and_consume(',');

@@ -102,7 +102,7 @@ case '9'
 #define NumberStart \
 DecimalDigits
 
-static_assert(sizeof(Token) == 2 * sizeof(s64));
+//static_assert(sizeof(Token) == 2 * sizeof(s64));
 
 #define KW_DEF(x) #x
 const char* keywords[] =
@@ -130,14 +130,15 @@ struct TokenBuffer
     RNS::StringBuffer sb;
     s64 consume_count;
 
-    Token* new_token(TokenID type, u32 start, u32 end, u16 line)
+    Token* new_token(TokenID type, u64 start, u32 end, u32 line, u32 column)
     {
         assert(len + 1 < cap);
         Token* token = &ptr[len++];
-        token->id = static_cast<u8>(type);
+        token->id = type;
         token->start = start;
-        token->offset = static_cast<u16>(end - start);
         token->line = line;
+        token->column = column;
+        token->offset = end - start;
         //token->print_token_id();
         return token;
     }
@@ -197,11 +198,12 @@ LexerResult lex(Compiler& compiler, RNS::String file_content)
 
     Token* token = nullptr;
 
-    for (u32 i = 0; i < file_content.len; i++)
+    u32 current_line_start = 0;
+    for (s64 i = 0; i < file_content.len; i++)
     {
         char c = file_content[i];
-        u32 start;
-        u32 end;
+        s64 start;
+        s64 end;
 
         for (;;)
         {
@@ -210,6 +212,9 @@ LexerResult lex(Compiler& compiler, RNS::String file_content)
                 case '\n':
                     token_buffer.line_count++;
                     assert(token_buffer.line_count <= UINT16_MAX);
+                    c = file_content[++i];
+                    current_line_start = i;
+                    break;
                 case ' ':
                     c = file_content[++i];
                     break;
@@ -237,9 +242,9 @@ LexerResult lex(Compiler& compiler, RNS::String file_content)
             end_symbol:
                 end = i;
                 i--;
-                u32 len = end - start;
+                auto len = end - start;
                 auto match = match_name(&token_buffer.file[start], len);
-                Token* t = token_buffer.new_token(match.token_id, start, end, static_cast<u16>(token_buffer.line_count));
+                Token* t = token_buffer.new_token(match.token_id, start, end, token_buffer.line_count, start - current_line_start);
                 switch (match.token_id)
                 {
                     case TokenID::Keyword:
@@ -284,7 +289,7 @@ LexerResult lex(Compiler& compiler, RNS::String file_content)
                 end = i;
                 number_buffer[number_buffer_len] = 0;
                 i--;
-                Token* t = token_buffer.new_token(TokenID::IntegerLit, start, end, static_cast<u16>(token_buffer.line_count));
+                Token* t = token_buffer.new_token(TokenID::IntegerLit, start, end, token_buffer.line_count, start - current_line_start);
                 char* dummy_ptr = nullptr;
                 t->int_lit = strtoull(number_buffer, &dummy_ptr, 10);
                 break;
@@ -299,7 +304,7 @@ LexerResult lex(Compiler& compiler, RNS::String file_content)
                 } while (c != '\"');
 
                 end = i + 1;
-                Token* t = token_buffer.new_token(TokenID::StringLit, start, end, static_cast<u16>(token_buffer.line_count));
+                Token* t = token_buffer.new_token(TokenID::StringLit, start, end, token_buffer.line_count, start - current_line_start);
                 s64 string_len = (i - (start + 1));
                 t->str_lit = token_buffer.sb.append(&token_buffer.file[start], string_len);
                 break;
@@ -310,7 +315,7 @@ LexerResult lex(Compiler& compiler, RNS::String file_content)
                 char char_lit = file_content[++i];
                 end = ++i;
 
-                Token* t = token_buffer.new_token(TokenID::CharLit, start, end, static_cast<u16>(token_buffer.line_count));
+                Token* t = token_buffer.new_token(TokenID::CharLit, start, end, token_buffer.line_count, start - current_line_start);
                 t->char_lit = char_lit;
                 break;
             }
@@ -321,7 +326,7 @@ LexerResult lex(Compiler& compiler, RNS::String file_content)
                 assert(false);
                 break;
             default:
-                (void)token_buffer.new_token(static_cast<TokenID>(c), (start = i), (end = (i + 1)), static_cast<u16>(token_buffer.line_count));
+                (void)token_buffer.new_token(static_cast<TokenID>(c), (start = i), (end = (i + 1)), token_buffer.line_count, i - current_line_start);
                 break;
         }
     }

@@ -13,7 +13,7 @@ static_assert(static_cast<u32>(Compiler::Subsystem::Count) == rns_array_length(s
 
 void Compiler::print_error(MetaContext context, const char* message_format, ...)
 {
-    errors_reported = true;
+    errors_reported++;
     const char* subsystem_name = subsystem_names[static_cast<u32>(subsystem)];
 
     printf("[Error in the %s] %s:%u col:%u %s\t", subsystem_name, context.filename, context.line_number, context.column_number, context.function_name);
