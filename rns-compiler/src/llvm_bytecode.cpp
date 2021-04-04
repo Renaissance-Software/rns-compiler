@@ -323,6 +323,10 @@ namespace LLVM
                 auto bits = type->integer_t.bits;
                 sprintf(buffer, "i%u", bits);
             } break;
+            case TypeID::VoidType:
+            {
+                sprintf(buffer, "void");
+            } break;
             default:
                 RNS_NOT_IMPLEMENTED;
                 break;

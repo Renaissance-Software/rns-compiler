@@ -11,7 +11,7 @@
 #define USE_LLVM 0
 #include <stdio.h>
 #include <stdlib.h>
-#define TEST_FILES 0
+#define TEST_FILES 1
 #include "test_files.h"
 #if TEST_FILES
 #undef USE_IMGUI
