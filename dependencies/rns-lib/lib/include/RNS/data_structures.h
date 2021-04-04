@@ -318,6 +318,11 @@ namespace RNS
         {
             return ptr + len;
         }
+        T& operator[](s64 index)
+        {
+            assert(index < len);
+            return ptr[index];
+        }
     };
 
     struct String

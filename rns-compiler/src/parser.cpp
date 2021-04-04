@@ -308,13 +308,24 @@ namespace AST
                             compiler.print_error({}, "Invoke expression requires opening parenthesis");
                             return nullptr;
                         }
-                        // @TODO: support argument passing
-                        auto* right_paren = expect_and_consume(')');
-                        if (!right_paren)
+
+                        bool args_left_to_parse = !expect_and_consume(')');
                         {
-                            compiler.print_error({}, "Invoke expression requires closing parenthesis");
-                            return nullptr;
+                            invoke_expr_node->invoke_expr.arguments = invoke_expr_node->invoke_expr.arguments.create(&allocator, 64);
                         }
+                        while (args_left_to_parse)
+                        {
+                            auto* new_arg = parse_expression(invoke_expr_node);
+                            assert(new_arg);
+                            invoke_expr_node->invoke_expr.arguments.append(new_arg);
+                            args_left_to_parse = !expect_and_consume(')');
+                            if (args_left_to_parse)
+                            {
+                                auto* comma = expect_and_consume(',');
+                                assert(comma);
+                            }
+                        }
+
                         return invoke_expr_node;
                     }
                     else
@@ -848,6 +859,11 @@ namespace AST
                 fn_type.arg_types.append(node->var_decl.type);
                 function_node->function.arguments.append(node);
                 arg_left_to_parse = (next_token = get_next_token())->id != ')';
+                if (arg_left_to_parse)
+                {
+                    auto* comma = expect_and_consume(',');
+                    assert(comma);
+                }
             }
 
             if (!expect_and_consume(')'))

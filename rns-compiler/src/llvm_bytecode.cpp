@@ -414,10 +414,38 @@ namespace LLVM
                 } break;
                 case InstructionID::Call:
                 {
-                    assert(operand_count == 1);
                     Value* callee = operands[0];
                     assert(callee->typeID == TypeID::FunctionType);
-                    printf("%%%llu = call i32 @%s()", id1, callee->name.ptr);
+                    printf("%%%llu = call i32 @%s(", id1, callee->name.ptr);
+                    auto arg_count = operand_count - 1;
+                    if (arg_count)
+                    {
+                        char type_buffer[64];
+                        for (auto i = 1; i < arg_count; i++)
+                        {
+                            auto* operand = operands[i];
+                            if (operand->typeID == TypeID::LabelType)
+                            {
+                                // @MaybeBuggy Here are interpreting this operand is a load, which might be not true
+                                printf("%s %%%llu, ", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id3);
+                            }
+                            else
+                            {
+                                RNS_NOT_IMPLEMENTED;
+                            }
+                        }
+                        auto* operand = operands[arg_count];
+                        if (operand->typeID == TypeID::LabelType)
+                        {
+                            // @MaybeBuggy Here are interpreting this operand is a load, which might be not true
+                            printf("%s %%%llu", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id3);
+                        }
+                        else
+                        {
+                            RNS_NOT_IMPLEMENTED;
+                        }
+                    }
+                    printf(")");
                 } break;
                 default:
                     RNS_NOT_IMPLEMENTED;
@@ -490,6 +518,7 @@ namespace LLVM
     struct Argument
     {
         Value value;
+        s64 arg_index;
     };
 
     struct Module
@@ -598,8 +627,14 @@ namespace LLVM
     {
         SlotTracker slot_tracker = SlotTracker::create(allocator, 2048);
         // @TODO: change hardcoding
-        assert(arg_count == 0);
-        slot_tracker.next_id = slot_tracker.starting_id = 1;
+        assert(slot_tracker.starting_id == 0);
+        assert(slot_tracker.next_id == 0);
+
+        for (auto i = 0; i < arg_count; i++)
+        {
+            slot_tracker.new_id(&arguments[i]);
+        }
+        slot_tracker.new_id(nullptr);
 
         for (auto* block : basic_blocks)
         {
@@ -621,9 +656,27 @@ namespace LLVM
             }
         }
 
-        assert(arg_count == 0);
-        const char* ret_type = this->value.type->function_t.ret_type->id == TypeID::VoidType ? "void" : "i32";
-        printf("\ndefine dso_local %s @%s()\n{\n", ret_type, value.name.ptr);
+        char ret_type_buffer[64];
+        printf("\ndefine dso_local %s @%s(", type_to_string(this->value.type->function_t.ret_type, ret_type_buffer), value.name.ptr);
+
+        // Argument printing
+        if (arg_count)
+        {
+            auto buffer_len = 0;
+            auto last_index = arg_count - 1;
+            char type_buffer[64];
+            for (auto i = 0; i < last_index; i++)
+            {
+                auto* type = arguments[i].value.type;
+                assert(type);
+                printf("%s %%%lld, ", type_to_string(type, type_buffer), arguments[i].arg_index);
+            }
+            auto* type = arguments[last_index].value.type;
+            assert(type);
+            printf("%s %%%lld", type_to_string(type, type_buffer), arguments[last_index].arg_index);
+        }
+        printf(")\n{\n");
+
         // @Info: actual printing
         for (auto* block : basic_blocks)
         {
@@ -846,7 +899,7 @@ namespace LLVM
             return create_ret(nullptr);
         }
 
-        Instruction* create_call(Value* callee, Value** argument_arr = nullptr, u8 arg_count = 0)
+        Instruction* create_call(Value* callee, Slice<Value*> arguments = {})
         {
             Instruction i = {
                 .base = {
@@ -855,15 +908,14 @@ namespace LLVM
                 },
             };
 
-            assert(arg_count == 0);
-            assert(arg_count <= rns_array_length(i.operands) - 1);
+            assert(arguments.len <= rns_array_length(i.operands) - 1);
 
-            i.operand_count = arg_count + 1;
+            i.operand_count = arguments.len + 1;
             i.operands[0] = callee;
 
-            for (auto index = 0; index < arg_count; index++)
+            for (auto index = 0; index < arguments.len; index++)
             {
-                i.operands[index + 1] = argument_arr[index];
+                i.operands[index + 1] = arguments[index];
             }
 
             return insert_at_end(i);
@@ -1242,7 +1294,6 @@ namespace LLVM
             } break;
             case NodeType::InvokeExpr:
             {
-                assert(node->invoke_expr.arguments.len == 0);
                 auto* invoke_expr = node->invoke_expr.expr;
                 assert(invoke_expr);
                 assert(invoke_expr->type == NodeType::Function);
@@ -1251,8 +1302,28 @@ namespace LLVM
                 auto* function = builder.module->find_function(function_name);
                 assert(function);
 
-                auto* call = builder.create_call(reinterpret_cast<Value*>(function));
-                return reinterpret_cast<Value*>(call);
+                auto arg_count = node->invoke_expr.arguments.len;
+                if (arg_count == 0)
+                {
+                    auto* call = builder.create_call(reinterpret_cast<Value*>(function));
+                    return reinterpret_cast<Value*>(call);
+                }
+                else
+                {
+                    Value* argument_buffer[255];
+                    assert(arg_count <= 15);
+                    auto& node_arg_buffer = node->invoke_expr.arguments;
+                    auto arg_i = 0;
+                    for (auto* arg_node : node_arg_buffer)
+                    {
+                        auto* arg = do_node(allocator, builder, arg_node);
+                        assert(arg);
+                        argument_buffer[arg_i++] = arg;
+                    }
+
+                    auto* call = builder.create_call(reinterpret_cast<Value*>(function), { argument_buffer, arg_count });
+                    return reinterpret_cast<Value*>(call);
+                }
             } break;
             case NodeType::UnaryOp:
             {
@@ -1356,7 +1427,7 @@ namespace LLVM
             builder.append_to_function(entry_block);
             builder.set_block(entry_block);
 
-            auto arg_count = builder.function->arg_count;
+            function->arg_count = ast_current_function->function.arguments.len;
             auto ret_type = builder.function->value.type->function_t.ret_type;
 
             bool ret_type_void = ret_type->id == TypeID::VoidType;
@@ -1405,14 +1476,30 @@ namespace LLVM
             }
 
             // Arguments
-            for (auto* arg_node : ast_current_function->function.arguments)
+            if (function->arg_count)
             {
-                assert(arg_node->type == NodeType::VarDecl);
-                auto* arg_type = arg_node->var_decl.type;
-                assert(arg_type);
-                builder.create_alloca(arg_type);
-                // @TODO: store?
-                assert(arg_count == 0);
+                function->arguments = new (&llvm_allocator) Argument[function->arg_count];
+                assert(function->arguments);
+                auto arg_index = 0;
+                for (auto* arg_node : ast_current_function->function.arguments)
+                {
+                    assert(arg_node->type == NodeType::VarDecl);
+                    auto* arg_type = arg_node->var_decl.type;
+                    assert(arg_type);
+                    assert(arg_node->var_decl.is_fn_arg);
+                    auto arg_name = arg_node->var_decl.name;
+
+                    auto* arg = &function->arguments[arg_index++];
+                    *arg = {
+                        .value = Value::New(TypeID::LabelType, arg_name, arg_type),
+                        .arg_index = arg_index,
+                    };
+
+                    auto* arg_alloca = builder.create_alloca(arg_type);
+                    arg_node->var_decl.backend_ref = arg_alloca;
+
+                    builder.create_store(reinterpret_cast<Value*>(arg), reinterpret_cast<Value*>(arg_alloca));
+                }
             }
 
             do_node(&llvm_allocator, builder, ast_main_scope);
