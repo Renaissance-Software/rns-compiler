@@ -121,7 +121,11 @@ s32 rns_main(s32 argc, char* argv[])
 #endif
     RNS::String working_test_case =
         NEW_TEST(
-            main :: () {}
+            main :: () -> s32
+    {
+        arr: [1]s32 = [3];
+        return arr[0];
+    }
     );
     bool result = compiler_workflow(working_test_case);
     if (result)

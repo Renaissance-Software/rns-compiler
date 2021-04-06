@@ -94,8 +94,8 @@ namespace AST
         inline Token* consume()
         {
             auto* result = &ptr[parser_it++];
-            //printf("Consuming: ");
-            //result->print_token_id();
+            printf("Consuming: ");
+            result->print_token_id();
             return result;
         }
 
@@ -174,6 +174,11 @@ namespace AST
                     consume();
                     return BinOp::Mul;
                 }
+                case TokenID::LeftBracket:
+                {
+                    consume();
+                    return BinOp::Subscript;
+                }
                 case TokenID::Slash:
                     // single char
                     RNS_NOT_IMPLEMENTED;
@@ -193,37 +198,49 @@ namespace AST
             return BinOp::None;
         }
 
-        Type* get_type(Token* t)
+        Type* get_type(Node* parent)
         {
-            if (t->get_id() == TokenID::Type)
+            auto* t = consume();
+            auto id = t->get_id();
+            switch (id)
             {
-                return t->type;
-            }
-            else if (t->get_id() == TokenID::Symbol)
-            {
-                RNS_NOT_IMPLEMENTED;
-            }
-            else if (t->get_id() == TokenID::Ampersand)
-            {
-                auto* type_name = expect_and_consume(TokenID::Type);
-                if (type_name)
+                case TokenID::Type:
+                    return t->type;
+                case TokenID::Ampersand:
                 {
-                    auto* type = type_name->type;
+                    auto* type = get_type(parent);
                     assert(type);
                     return Type::get_pointer_type(type);
                 }
-                else
+                case TokenID::LeftBracket:
                 {
-                    type_name = expect_and_consume(TokenID::Symbol);
-                    if (type_name)
+                    auto i = 0;
+                    Type* array_elements_type = nullptr;
+                    Token* in_brackets_token = nullptr;
+                    s64 array_length = 0;
+                    if ((in_brackets_token = expect_and_consume(TokenID::IntegerLit)))
                     {
-                        RNS_NOT_IMPLEMENTED;
+                        array_length = in_brackets_token->int_lit;
                     }
-                    else
-                    {
-                        compiler.print_error({}, "Couldn't find type for pointer type");
-                    }
+                    auto* right_bracket = expect_and_consume(']');
+                    assert(right_bracket);
+                    array_elements_type = get_type(parent);
+                    assert(array_elements_type);
+                    assert(right_bracket);
+
+                    Type type = {
+                        .id = TypeID::ArrayType,
+                        .array_t = {
+                            .type = array_elements_type,
+                            .count = array_length,
+                        },
+                    };
+                    auto* new_array_type = Type::type_buffer.append(type);
+                    return new_array_type;
                 }
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
             }
 
             return nullptr;
@@ -378,6 +395,56 @@ namespace AST
                     p_dereference_node->unary_op.node = parse_primary_expression(p_dereference_node);
 
                     return p_dereference_node;
+                } break;
+                case TokenID::LeftBracket:
+                {
+                    consume();
+                    auto* array_lit_node = nb.append(NodeType::ArrayLit, parent);
+                    bool elements_left_to_parse = !expect_and_consume(']');
+                    if (elements_left_to_parse)
+                    {
+                        array_lit_node->array_lit.elements = array_lit_node->array_lit.elements.create(&allocator, 16);
+                        for (;;)
+                        {
+                            auto* literal_node = parse_expression(array_lit_node);
+                            assert(literal_node);
+                            if (!literal_node)
+                            {
+                                compiler.print_error({}, "Couldn't parse array literal element");
+                                return nullptr;
+                            }
+                            array_lit_node->array_lit.elements.append(literal_node);
+
+                            elements_left_to_parse = !expect_and_consume(']');
+                            if (elements_left_to_parse)
+                            {
+                                auto* comma = expect_and_consume(',');
+                                assert(comma);
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+
+                        auto* first_element = array_lit_node->array_lit.elements[0];
+                        switch (first_element->type)
+                        {
+                            case NodeType::IntLit:
+                            {
+                                array_lit_node->array_lit.type = Type::get_integer_type(32, true);
+                            } break;
+                            default:
+                                RNS_NOT_IMPLEMENTED;
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        RNS_NOT_IMPLEMENTED;
+                    }
+
+                    return array_lit_node;
                 } break;
                 case TokenID::Semicolon:
                     return nullptr;
@@ -654,41 +721,55 @@ namespace AST
             {
                 assert(bin_op != BinOp::VariableDecl);
                 auto* binary_op_left_expression = *left_expr;
-                if (bin_op == BinOp::Assign)
+                if (bin_op == BinOp::Subscript)
                 {
-                    binary_op_left_expression->value_type = ValueType::LValue;
-                }
-                auto* binary_op_right_expression = parse_primary_expression(parent);
-
-                if (!binary_op_right_expression)
-                {
-                    return nullptr;
-                }
-
-                // @TODO: bad practice to use tagged union fields without knowing if they are what you want, but useful here
-                auto left_expression_operator_precedence = operator_precedence.rules[(u32)binary_op_left_expression->bin_op.op];
-                auto right_expression_operator_precedence = operator_precedence.rules[(u32)bin_op];
-                bool right_precedes_left = binary_op_left_expression->type == NodeType::BinOp && right_expression_operator_precedence < left_expression_operator_precedence &&
-                    !binary_op_left_expression->bin_op.parenthesis && (binary_op_right_expression->type != NodeType::BinOp || (binary_op_right_expression->type == NodeType::BinOp && !binary_op_right_expression->bin_op.parenthesis));
-
-                if (right_precedes_left)
-                {
-                    Node* right_operand_of_left_binary_expression = binary_op_left_expression->bin_op.right;
-                    binary_op_left_expression->bin_op.right = nb.append(NodeType::BinOp, parent);
-                    auto* new_prioritized_expression = binary_op_left_expression->bin_op.right;
-                    new_prioritized_expression->bin_op.op = bin_op;
-                    new_prioritized_expression->bin_op.left = right_operand_of_left_binary_expression;
-                    new_prioritized_expression->bin_op.right = binary_op_right_expression;
-                    // @TODO: redundant?
-                    *left_expr = binary_op_left_expression;
+                    Node* subscript_node = nb.append(NodeType::Subscript, parent);
+                    binary_op_left_expression->parent = subscript_node;
+                    subscript_node->subscript.expr_ref = binary_op_left_expression;
+                    subscript_node->subscript.index_ref = parse_expression(subscript_node);
+                    auto* right_bracket = expect_and_consume(']');
+                    assert(right_bracket);
+                    assert(subscript_node->subscript.index_ref);
+                    *left_expr = subscript_node;
                 }
                 else
                 {
-                    Node* node = nb.append(NodeType::BinOp, parent);
-                    node->bin_op.op = bin_op;
-                    node->bin_op.left = binary_op_left_expression;
-                    node->bin_op.right = binary_op_right_expression;
-                    *left_expr = node;
+                    if (bin_op == BinOp::Assign)
+                    {
+                        binary_op_left_expression->value_type = ValueType::LValue;
+                    }
+
+                    auto* binary_op_right_expression = parse_primary_expression(parent);
+                    if (!binary_op_right_expression)
+                    {
+                        return nullptr;
+                    }
+
+                    // @TODO: bad practice to use tagged union fields without knowing if they are what you want, but useful here
+                    auto left_expression_operator_precedence = operator_precedence.rules[(u32)binary_op_left_expression->bin_op.op];
+                    auto right_expression_operator_precedence = operator_precedence.rules[(u32)bin_op];
+                    bool right_precedes_left = binary_op_left_expression->type == NodeType::BinOp && right_expression_operator_precedence < left_expression_operator_precedence &&
+                        !binary_op_left_expression->bin_op.parenthesis && (binary_op_right_expression->type != NodeType::BinOp || (binary_op_right_expression->type == NodeType::BinOp && !binary_op_right_expression->bin_op.parenthesis));
+
+                    if (right_precedes_left)
+                    {
+                        Node* right_operand_of_left_binary_expression = binary_op_left_expression->bin_op.right;
+                        binary_op_left_expression->bin_op.right = nb.append(NodeType::BinOp, parent);
+                        auto* new_prioritized_expression = binary_op_left_expression->bin_op.right;
+                        new_prioritized_expression->bin_op.op = bin_op;
+                        new_prioritized_expression->bin_op.left = right_operand_of_left_binary_expression;
+                        new_prioritized_expression->bin_op.right = binary_op_right_expression;
+                        // @TODO: redundant?
+                        *left_expr = binary_op_left_expression;
+                    }
+                    else
+                    {
+                        Node* node = nb.append(NodeType::BinOp, parent);
+                        node->bin_op.op = bin_op;
+                        node->bin_op.left = binary_op_left_expression;
+                        node->bin_op.right = binary_op_right_expression;
+                        *left_expr = node;
+                    }
                 }
             }
 
@@ -704,34 +785,9 @@ namespace AST
             }
             if (left->type == NodeType::VarDecl)
             {
-                Token* t;
                 Node* var_decl_node = left;
 
-                if ((t = expect_and_consume(TokenID::Type)) || (t = expect_and_consume(TokenID::Symbol)) || (t = expect_and_consume(TokenID::Ampersand))) // Ampersand = pointer
-                {
-                    var_decl_node->var_decl.type = get_type(t);
-                }
-                // @TODO: @Types Consider types could consume more than one token
-                else if ((t = expect_and_consume(TokenID::Symbol)))
-                {
-                    // @TODO: support more than native types
-                    RNS_NOT_IMPLEMENTED;
-                    //                Node* type_node = nb.append(NodeType::Type);
-                    //                type_node->type_expr.kind = TypeKind::Native;
-                    //                Node* type_name_node = nb.append(NodeType::SymName);
-                    //                assert(false);
-                    //#if 0
-                    //                type_name_node->sym_name.len = t->offset;
-                    //                type_name_node->sym_name.ptr = t->symbol;
-                    //                type_node->type_expr.non_native = nb.get_id(type_name_node);
-                    //                var_decl_node->var_decl.type = nb.get_id(type_node);
-                    //#endif
-                }
-                else
-                {
-                    // @TODO: No type; Should infer
-                    RNS_UNREACHABLE;
-                }
+                var_decl_node->var_decl.type = get_type(parent);
 
                 if (expect_and_consume('='))
                 {
@@ -874,8 +930,7 @@ namespace AST
 
             if (expect_and_consume('-') && expect_and_consume('>'))
             {
-                auto* t = consume();
-                fn_type.ret_type = get_type(t);
+                fn_type.ret_type = get_type(nullptr);
                 if (!fn_type.ret_type)
                 {
                     compiler.print_error({}, "Error parsing return type");

@@ -23,6 +23,7 @@ enum class BinOp
     Mul,
     VariableDecl,
     Assign,
+    Subscript,
     Cmp_Equal,
     Cmp_NotEqual,
     Cmp_LessThan,
@@ -151,6 +152,12 @@ namespace Typing
     {
     };
 
+    struct ArrayType
+    {
+        Type* type;
+        s64 count;
+    };
+
     using TypeRefBuffer = RNS::Buffer<Type*>;
     
     struct FunctionType
@@ -178,6 +185,7 @@ namespace Typing
             EnumType enum_t;
             FunctionType function_t;
             PointerType pointer_t;
+            ArrayType array_t;
         };
 
         static TypeBuffer type_buffer;
@@ -199,6 +207,7 @@ namespace Typing
     };
     static_assert(sizeof(ConstantInt) == 2 * sizeof(s64));
 }
+
 using namespace Typing;
 namespace Lexer
 {
@@ -406,28 +415,32 @@ using namespace Lexer;
 
 namespace AST
 {
-    inline const u32 no_value = UINT32_MAX;
-
     struct Node;
-    using NodeSlice  = RNS::Buffer<Node>;
-    using FieldNames = RNS::Slice<RNS::String>;
-    using FieldTypes = RNS::Slice<Type>;
+
+    using NodeRefBuffer = RNS::Buffer<Node*>;
+    using FunctionDeclarationBuffer = NodeRefBuffer;
+    using StructBuffer = NodeRefBuffer;
+    using UnionBuffer = NodeRefBuffer;
+    using EnumBuffer = NodeRefBuffer;
+    using FunctionTypeBuffer = NodeRefBuffer;
 
     enum class NodeType
     {
+        TypeExpr,
         IntLit,
+        ArrayLit,
         UnaryOp,
         BinOp,
+        Subscript,
         Ret,
         VarDecl,
         VarExpr,
-        InvokeExpr,
         Conditional,
         Block,
         Loop,
         Break,
+        InvokeExpr,
         Function,
-        TypeExpr,
     };
 
     enum class UnaryOpType
@@ -461,8 +474,6 @@ namespace AST
         Node* mentioned;
     };
 
-
-    using NodeRefBuffer = RNS::Buffer<Node*>;
     struct Block
     {
         enum class Type
@@ -528,6 +539,18 @@ namespace AST
         Node* expr;
     };
 
+    struct Subscript
+    {
+        Node* expr_ref;
+        Node* index_ref;
+    };
+
+    struct ArrayLiteral
+    {
+        NodeRefBuffer elements;
+        Type* type;
+    };
+
     struct Node
     {
         Node* parent;
@@ -548,6 +571,8 @@ namespace AST
             Break break_;
             FunctionDeclaration function;
             Type type_expr;
+            Subscript subscript;
+            ArrayLiteral array_lit;
         };
     };
 
@@ -573,11 +598,6 @@ namespace AST
         }
     };
 
-    using FunctionDeclarationBuffer = NodeRefBuffer;
-    using StructBuffer = NodeRefBuffer;
-    using UnionBuffer = NodeRefBuffer;
-    using EnumBuffer = NodeRefBuffer;
-    using FunctionTypeBuffer = NodeRefBuffer;
 
     struct Result
     {

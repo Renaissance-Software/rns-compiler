@@ -128,7 +128,6 @@ struct TokenBuffer
     s64 file_size;
     const char* file;
     RNS::StringBuffer sb;
-    s64 consume_count;
 
     Token* new_token(TokenID type, u64 start, u32 end, u32 line, u32 column)
     {
