@@ -22,7 +22,6 @@
 #endif
 
 #include "compiler_types.h"
-#include "typechecker.h"
 #include "lexer.h"
 #include "parser.h"
 #include "llvm_bytecode.h"
@@ -51,16 +50,16 @@ bool compiler_workflow(RNS::String file)
     };
 
     Allocator type_allocator = create_suballocator(&compiler.page_allocator, RNS_MEGABYTE(5));
-    Type::init(&type_allocator, type_allocator.pool.cap / sizeof(Type));
+    TypeBuffer type_declarations = Type::init_type_system(&type_allocator);
 
-    LexerResult lexer_result = lex(compiler, file);
+    LexerResult lexer_result = lex(compiler, file, type_declarations);
     if (compiler.errors_reported)
     {
         printf("Lexer failed!\n");
         return false;
     }
 
-    auto parser_result = parse(compiler, lexer_result);
+    auto parser_result = parse(compiler, lexer_result, type_declarations);
     if (compiler.errors_reported)
     {
         printf("Parsing failed.\n");
@@ -76,7 +75,7 @@ bool compiler_workflow(RNS::String file)
     {
         case CompilerIR::LLVM_CUSTOM:
         {
-            LLVM::encode(compiler, parser_result.node_buffer, parser_result.function_type_declarations, parser_result.function_declarations);
+            RNS::encode(compiler, parser_result.node_buffer, parser_result.function_type_declarations, parser_result.function_declarations);
         } break;
         default:
             RNS_UNREACHABLE;

@@ -22,6 +22,7 @@ namespace AST
         UnionBuffer union_declarations;
         EnumBuffer enum_declarations;
         FunctionTypeBuffer function_type_declarations;
+        TypeBuffer& type_declarations;
 
         Node* current_scope;
         Node* current_function;
@@ -198,7 +199,7 @@ namespace AST
             return BinOp::None;
         }
 
-        Type* get_type(Node* parent)
+        Type* parser_get_type_scanning(Node* parent)
         {
             auto* t = consume();
             auto id = t->get_id();
@@ -208,9 +209,9 @@ namespace AST
                     return t->type;
                 case TokenID::Ampersand:
                 {
-                    auto* type = get_type(parent);
+                    auto* type = parser_get_type_scanning(parent);
                     assert(type);
-                    return Type::get_pointer_type(type);
+                    return Type::get_pointer_type(type, type_declarations);
                 }
                 case TokenID::LeftBracket:
                 {
@@ -224,19 +225,12 @@ namespace AST
                     }
                     auto* right_bracket = expect_and_consume(']');
                     assert(right_bracket);
-                    array_elements_type = get_type(parent);
+                    array_elements_type = parser_get_type_scanning(parent);
                     assert(array_elements_type);
                     assert(right_bracket);
 
-                    Type type = {
-                        .id = TypeID::ArrayType,
-                        .array_t = {
-                            .type = array_elements_type,
-                            .count = array_length,
-                        },
-                    };
-                    auto* new_array_type = Type::type_buffer.append(type);
-                    return new_array_type;
+                    auto* array_type = Type::get_array_type(array_elements_type, array_length, type_declarations);
+                    return array_type;
                 }
                 default:
                     RNS_NOT_IMPLEMENTED;
@@ -284,6 +278,50 @@ namespace AST
             if (name.equal(current_function->function.name))
             {
                 return current_function;
+            }
+
+            return nullptr;
+        }
+
+        Type* get_type(Node* node, Type* expected_type = nullptr)
+        {
+            switch (node->type)
+            {
+                case NodeType::IntLit:
+                {
+                    if (expected_type)
+                    {
+                        switch (expected_type->id)
+                        {
+                            // @TODO: check if it fits
+                            case TypeID::IntegerType:
+                                return expected_type;
+                            case TypeID::ArrayType:
+                            {
+                                auto* arrtype = expected_type->array_t.type;
+                                assert(arrtype);
+                                assert(arrtype->id == TypeID::IntegerType);
+                                return arrtype;
+                            }
+                            default:
+                                RNS_NOT_IMPLEMENTED;
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        RNS_NOT_IMPLEMENTED;
+                    }
+                } break;
+                case NodeType::VarDecl:
+                {
+                    auto* var_type = node->var_decl.type;
+                    assert(var_type);
+                    return var_type;
+                } break;
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
             }
 
             return nullptr;
@@ -428,16 +466,10 @@ namespace AST
                         }
 
                         auto* first_element = array_lit_node->array_lit.elements[0];
-                        switch (first_element->type)
-                        {
-                            case NodeType::IntLit:
-                            {
-                                array_lit_node->array_lit.type = Type::get_integer_type(32, true);
-                            } break;
-                            default:
-                                RNS_NOT_IMPLEMENTED;
-                                break;
-                        }
+                        auto* expected_type = get_type(parent);
+                        auto* elem_type = get_type(first_element, expected_type);
+                        auto arrlen = array_lit_node->array_lit.elements.len;
+                        array_lit_node->array_lit.type = Type::get_array_type(elem_type, arrlen, type_declarations);
                     }
                     else
                     {
@@ -550,7 +582,7 @@ namespace AST
             it_decl->var_decl.is_fn_arg = false;
             it_decl->var_decl.name = RNS::String{ it_symbol->symbol, it_symbol->offset };
             it_decl->var_decl.scope = current_scope;
-            it_decl->var_decl.type = Type::get_integer_type(32, true);
+            it_decl->var_decl.type = Type::get_integer_type(32, true, type_declarations);
             // @TODO: we should match it to the right operand
             it_decl->var_decl.value = nb.append(NodeType::IntLit, it_decl);
             it_decl->var_decl.value->int_lit.bit_count = 32;
@@ -746,8 +778,12 @@ namespace AST
                     }
 
                     // @TODO: bad practice to use tagged union fields without knowing if they are what you want, but useful here
-                    auto left_expression_operator_precedence = operator_precedence.rules[(u32)binary_op_left_expression->bin_op.op];
-                    auto right_expression_operator_precedence = operator_precedence.rules[(u32)bin_op];
+                    auto left_bin_op = binary_op_left_expression->bin_op.op;
+                    auto right_bin_op = bin_op;
+                    assert(left_bin_op < BinOp::Count);
+                    assert(right_bin_op < BinOp::Count);
+                    auto left_expression_operator_precedence = operator_precedence.rules[(u32)left_bin_op];
+                    auto right_expression_operator_precedence = operator_precedence.rules[(u32)right_bin_op];
                     bool right_precedes_left = binary_op_left_expression->type == NodeType::BinOp && right_expression_operator_precedence < left_expression_operator_precedence &&
                         !binary_op_left_expression->bin_op.parenthesis && (binary_op_right_expression->type != NodeType::BinOp || (binary_op_right_expression->type == NodeType::BinOp && !binary_op_right_expression->bin_op.parenthesis));
 
@@ -787,11 +823,11 @@ namespace AST
             {
                 Node* var_decl_node = left;
 
-                var_decl_node->var_decl.type = get_type(parent);
+                var_decl_node->var_decl.type = parser_get_type_scanning(parent);
 
                 if (expect_and_consume('='))
                 {
-                    var_decl_node->var_decl.value = parse_expression(parent);
+                    var_decl_node->var_decl.value = parse_expression(var_decl_node);
                 }
 
                 // @TODO: should append to the current scope
@@ -930,7 +966,7 @@ namespace AST
 
             if (expect_and_consume('-') && expect_and_consume('>'))
             {
-                fn_type.ret_type = get_type(nullptr);
+                fn_type.ret_type = parser_get_type_scanning(nullptr);
                 if (!fn_type.ret_type)
                 {
                     compiler.print_error({}, "Error parsing return type");
@@ -939,7 +975,7 @@ namespace AST
             }
             else
             {
-                fn_type.ret_type = Type::get_void_type();
+                fn_type.ret_type = Type::get_void_type(type_declarations);
             }
 
             function_node->function.type = nb.append(NodeType::TypeExpr, function_node);
@@ -985,7 +1021,7 @@ const char* node_type_to_string(NodeType type)
     }
 }
 
-AST::Result parse(Compiler& compiler, LexerResult& lexer_result)
+AST::Result parse(Compiler& compiler, LexerResult& lexer_result, TypeBuffer& type_declarations)
 {
     RNS_PROFILE_FUNCTION();
     compiler.subsystem = Compiler::Subsystem::Parser;
@@ -1002,6 +1038,7 @@ AST::Result parse(Compiler& compiler, LexerResult& lexer_result)
         .union_declarations = UnionBuffer::create(&parser.allocator, 64),
         .enum_declarations = EnumBuffer::create(&parser.allocator, 64),
         .function_type_declarations = FunctionTypeBuffer::create(&parser.allocator, 64),
+        .type_declarations = type_declarations,
     };
 
     while (parser.parser_it < parser.len)

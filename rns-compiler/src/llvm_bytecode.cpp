@@ -1,33 +1,34 @@
 #include "llvm_bytecode.h"
 
 #include <RNS/profiler.h>
-#include <llvm/Bitcode/LLVMBitCodes.h>
-#include "typechecker.h"
+#include <stdio.h>
 
-namespace LLVM
+namespace RNS
 {
+    struct SlotTracker;
     struct BasicBlock;
     struct Function;
     struct Instruction;
+    struct Module;
     using BasicBlockBuffer = Buffer<BasicBlock>;
     using InstructionBuffer = Buffer<Instruction>;
-    using namespace RNS;
     using namespace AST;
     using IDType = u64;
 
-    enum class ValueID : u8
+    enum class TypeID
     {
-        Memory,
-        Global,
-        Constant,
-        Instruction,
-        Metadata,
-        InlineASM,
-        Argument,
-        BasicBlock,
+        Void,
+        Label,
+        Integer,
+        Float,
+        Pointer,
+        Vector,
+        Struct,
+        Array,
+        Function,
     };
 
-    enum class Value2 : u8
+    enum class ValueID : u8
     {
         Undefined = 0,
         Argument,
@@ -70,15 +71,301 @@ namespace LLVM
         // @TODO: figure out Signed-wrapping
     };
 
-    enum class Type2
+    struct Type
     {
-        Array,
-        Function,
-        Integer,
-        Pointer,
-        Struct,
-        Vector,
+        StringView name;
+        TypeID id;
     };
+    using TypeRefBuffer = Buffer<Type*>;
+
+    struct Value
+    {
+        RNS::Type* type;
+        ValueID base_id;
+        u8 padding[7];
+
+        const char* print(char* buffer, SlotTracker& slot_tracker);
+    };
+
+    struct FloatType
+    {
+        Type base;
+        u16 bits;
+    };
+
+    struct IntegerType
+    {
+        Type base;
+        u16 bits;
+    };
+
+    struct PointerType
+    {
+        Type base;
+        Type* type;
+    };
+
+    struct StructType
+    {
+        Type base;
+        Slice<Type*> field_types;
+    };
+
+    struct ArrayType
+    {
+        Type base;
+        Type* type;
+        u64 count;
+    };
+
+    struct FunctionType
+    {
+        Type base;
+        Slice<Type*> arg_types;
+        Type* ret_type;
+    };
+
+    struct ConstantArray
+    {
+        Value value;
+        Type* array_type;
+        Slice<Value*> array_values;
+    };
+
+    struct Context
+    {
+        Type void_type, label_type;
+        IntegerType i1, i8, i16, i32, i64;
+        FloatType f32, f64;
+        // @TODO: add vector types and custom types
+
+        Buffer<FunctionType> function_types;
+        Buffer<ArrayType> array_types;
+        Buffer<PointerType> pointer_types;
+        Buffer<ConstantArray> constant_arrays;
+
+        static Context create(Allocator* allocator)
+        {
+            auto get_base_type = [](TypeID type, const char* name)
+            {
+                Type base = {
+                    .name = StringView::create(name, strlen(name)),
+                    .id = type,
+                };
+
+                return base;
+            };
+
+            Context context = {};
+            context.void_type = get_base_type(TypeID::Void, "void");
+            context.label_type = get_base_type(TypeID::Label, "label");
+
+            auto get_integer_type = [&](u16 bits, const char* name)
+            {
+                IntegerType integer_type = {
+                    .base = get_base_type(TypeID::Integer, name),
+                    .bits = bits,
+                };
+
+                return integer_type;
+            };
+
+            context.i1 = get_integer_type(1, "i1");
+            context.i8 = get_integer_type(8, "i8");
+            context.i16 = get_integer_type(16, "i16");
+            context.i32 = get_integer_type(32, "i32");
+            context.i64 = get_integer_type(64, "i64");
+
+            auto get_float_type = [&](u16 bits, const char* name)
+            {
+                FloatType float_type = {
+                    .base = get_base_type(TypeID::Integer, name),
+                    .bits = bits,
+                };
+
+                return float_type;
+            };
+
+            context.f32 = get_float_type(32, "f32");
+            context.f64 = get_float_type(64, "f64");
+
+            context.function_types = context.function_types.create(allocator, 1024);
+            context.array_types = context.array_types.create(allocator, 1024);
+            context.pointer_types = context.pointer_types.create(allocator, 1024);
+            context.constant_arrays = context.constant_arrays.create(allocator, 1024);
+
+
+            return context;
+        }
+
+        Type* get_void_type()
+        {
+            return &void_type;
+        }
+
+        Type* get_label_type()
+        {
+            return &label_type;
+        }
+
+        Type* get_boolean_type()
+        {
+            return reinterpret_cast<Type*>(&i1);
+        }
+
+        Type* get_integer_type(u16 bits)
+        {
+            switch (bits)
+            {
+                case 1:
+                    return reinterpret_cast<Type*>(&i1);
+                case 8:
+                    return reinterpret_cast<Type*>(&i8);
+                case 16:
+                    return reinterpret_cast<Type*>(&i16);
+                case 32:
+                    return reinterpret_cast<Type*>(&i32);
+                case 64:
+                    return reinterpret_cast<Type*>(&i64);
+                default:
+                    RNS_NOT_IMPLEMENTED;
+            }
+
+            return nullptr;
+        }
+
+        Type* get_float_type(u16 bits)
+        {
+            switch (bits)
+            {
+                case 32:
+                    return reinterpret_cast<Type*>(&f32);
+                case 64:
+                    return reinterpret_cast<Type*>(&f64);
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+
+            return nullptr;
+        }
+
+        Type* get_pointer_type(Type* type)
+        {
+            assert(type);
+
+            for (auto& pt_type : pointer_types)
+            {
+                if (pt_type.type == type)
+                {
+                    return reinterpret_cast<Type*>(&pt_type);
+                }
+            }
+
+            PointerType* pointer_type = pointer_types.allocate();
+            pointer_type->base.id = TypeID::Pointer;
+            pointer_type->type = type;
+
+            return reinterpret_cast<Type*>(pointer_type);
+        }
+
+        ConstantArray* get_constant_array(Slice<Value*> values, Type* type)
+        {
+            ConstantArray* constarray = constant_arrays.allocate();
+            constarray->value.base_id = ValueID::ConstantArray;
+            constarray->array_type = type;
+            constarray->array_values = values;
+
+            return constarray;
+        }
+    };
+
+
+    Type* get_type(Allocator* allocator, Context& context, User::Type* type)
+    {
+        assert(type);
+        switch (type->id)
+        {
+            case User::TypeID::FunctionType:
+            {
+                Type* ret_type = get_type(allocator, context, type->function_t.ret_type);
+                assert(ret_type);
+                auto arg_count = type->function_t.arg_types.len;
+
+                for (auto& fn_type : context.function_types)
+                {
+                    if (ret_type != fn_type.ret_type)
+                    {
+                        continue;
+                    }
+                    for (auto i = 0; i < type->function_t.arg_types.len; i++)
+                    {
+                        auto* user_arg_type = type->function_t.arg_types[i];
+                        auto* arg_type = get_type(allocator, context, user_arg_type);
+                        auto* fn_arg_type = fn_type.arg_types[i];
+                        if (arg_type == fn_arg_type)
+                        {
+                            continue;
+                        }
+                        break;
+                    }
+
+                    return reinterpret_cast<Type*>(&fn_type);
+                }
+
+                FunctionType* function_type = context.function_types.allocate();
+                function_type->base.id = TypeID::Function;
+                if (arg_count)
+                {
+                    function_type->arg_types.ptr = new(allocator) Type * [arg_count];
+                    function_type->arg_types.len = arg_count;
+                }
+                function_type->ret_type = ret_type;
+
+                return reinterpret_cast<Type*>(function_type);
+            } break;
+            case User::TypeID::IntegerType:
+            {
+                auto bits = type->integer_t.bits;
+                return context.get_integer_type(bits);
+            } break;
+            case User::TypeID::ArrayType:
+            {
+                auto count = type->array_t.count;
+                auto* elem_type = get_type(allocator, context, type->array_t.type);
+                for (auto& array_type : context.array_types)
+                {
+                    if (array_type.count == count && array_type.type == elem_type)
+                    {
+                        return reinterpret_cast<Type*>(&array_type);
+                    }
+                }
+
+                ArrayType* array_type = context.array_types.allocate();
+                array_type->base.id = TypeID::Array;
+                array_type->count = count;
+                array_type->type = elem_type;
+
+                return reinterpret_cast<Type*>(array_type);
+            } break;
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
+        }
+        return nullptr;
+    }
+
+
+    /*
+    Unary instruction,
+    unary operator
+    binary operator,
+    cast instruction,
+    cmp instruction,
+    call instruction, (intrinsics are based of this)
+        -instrinsic
+
+    */
 
     enum class InstructionID : u8
     {
@@ -165,7 +452,6 @@ namespace LLVM
         LandingPad = 66,
         Freeze = 67,
     };
-
 
     // Intrinsics are instances of the call instruction in LLVM
     // Intrinsics enums for x86-64
@@ -468,26 +754,9 @@ namespace LLVM
     };
 
     struct SlotTracker;
-    struct Value
-    {
-        // @TODO: undo this mess
-        Type* type;
-        TypeID typeID;
-        RNS::String name;
 
-        static Value New(TypeID type_ID, String name = {}, Type* type = nullptr)
-        {
-            Value e = {
-                .type = type,
-                .typeID = type_ID,
-                .name = name,
-            };
 
-            return e;
-        }
-
-        const char* print(char* buffer, SlotTracker& slot_tracker);
-    };
+    static_assert(sizeof(Value) <= 2 * sizeof(u64));
 
     struct SlotTracker
     {
@@ -527,7 +796,14 @@ namespace LLVM
         }
     };
 
-    struct APInt
+    struct Argument
+    {
+        Value value;
+        s64 arg_index;
+    };
+
+
+    struct ConstantInt
     {
         Value e;
         union
@@ -538,16 +814,21 @@ namespace LLVM
         u32 bit_count;
         bool is_signed;
 
-        static APInt* get(Allocator* allocator, Type* integer_type, u64 value, bool is_signed)
+        static ConstantInt* get(Allocator* allocator, RNS::Type* type, u64 value, bool is_signed)
         {
-            assert(integer_type->id == TypeID::IntegerType);
-            auto bits = integer_type->integer_t.bits;
+            assert(type);
+            assert(type->id == TypeID::Integer);
+            auto* integer_type = reinterpret_cast<IntegerType*>(type);
+            auto bits = integer_type->bits;
             assert(bits >= 1 && bits <= 64);
 
-            auto* new_int = new(allocator) APInt;
+            auto* new_int = new(allocator) ConstantInt;
             assert(new_int);
             *new_int = {
-                .e = Value::New(TypeID::IntegerType, {}, integer_type),
+                .e = {
+                    .type = type,
+                    .base_id = ValueID::ConstantInt,
+                },
                 .value = value,
                 .bit_count = bits,
                 .is_signed = is_signed,
@@ -639,17 +920,19 @@ namespace LLVM
         assert(type);
         switch (type->id)
         {
-            case TypeID::PointerType:
+            case TypeID::Pointer:
             {
                 char aux_buffer[64];
-                sprintf(buffer, "%s*", type_to_string(type->pointer_t.appointee, aux_buffer));
+                auto* pointer_type = reinterpret_cast<PointerType*>(type);
+                sprintf(buffer, "%s*", type_to_string(pointer_type->type, aux_buffer));
             } break;
-            case TypeID::IntegerType:
+            case TypeID::Integer:
             {
-                auto bits = type->integer_t.bits;
+                auto* integer_type = reinterpret_cast<IntegerType*>(type);
+                auto bits = integer_type->bits;
                 sprintf(buffer, "i%u", bits);
             } break;
-            case TypeID::VoidType:
+            case TypeID::Void:
             {
                 sprintf(buffer, "void");
             } break;
@@ -659,6 +942,66 @@ namespace LLVM
         }
         return (const char*)buffer;
     }
+
+    struct Module
+    {
+        Buffer<Function> functions;
+
+        static Module create(Allocator* allocator)
+        {
+            Module module = {
+                .functions = module.functions.create(allocator, 64),
+            };
+
+            return module;
+        }
+
+        // @TODO: do typechecking
+        Function* find_function(StringView name, Type* type = nullptr);
+    };
+
+    struct Function
+    {
+        // @Info: for a function, a value type is the returning type
+        Value value;
+        StringView name;
+        Type* type;
+        Buffer<BasicBlock*> basic_blocks;
+        Argument* arguments;
+        s64 arg_count;
+        Module* parent;
+        // @TODO: symbol table
+
+        static Function* create(Module* module, Type* type, /* @TODO: linkage*/ String name)
+        {
+            assert(type);
+            auto* function_type = reinterpret_cast<FunctionType*>(type);
+            auto* ret_type = function_type->ret_type;
+            assert(ret_type);
+
+            auto* function = module->functions.allocate();
+            *function = {
+                .value = {
+                    .type = ret_type,
+                    .base_id = ValueID::GlobalFunction,
+                 },
+                .name = StringView::create(name.ptr, name.len),
+                .type = type,
+                .parent = module,
+                // @TODO: basic blocks, args...
+            };
+
+            return function;
+        }
+
+        static FunctionType* get_type(Type* return_type, Slice<Type*> types, bool var_args)
+        {
+            RNS_NOT_IMPLEMENTED;
+            return nullptr;
+        }
+
+        void print(Allocator* allocator);
+    };
 
     struct Instruction
     {
@@ -694,7 +1037,10 @@ namespace LLVM
             {
                 case InstructionID::Alloca:
                 {
-                    printf("%%%llu = alloca %s, align 4", id1, type_to_string(alloca_i.allocated_type->pointer_t.appointee, type_buffer));
+                    auto* pointer_type = this->base.value.type;
+                    assert(pointer_type);
+                    auto* pointer_type_cast = reinterpret_cast<PointerType*>(pointer_type);
+                    printf("%%%llu = alloca %s, align 4", id1, type_to_string(pointer_type_cast->type, type_buffer));
                 } break;
                 case InstructionID::Store:
                 {
@@ -745,20 +1091,24 @@ namespace LLVM
                 case InstructionID::Call:
                 {
                     Value* callee = operands[0];
-                    assert(callee->typeID == TypeID::FunctionType);
-                    assert(callee->type);
-                    auto ret_type_not_void = callee->type->function_t.ret_type->id != TypeID::VoidType;
+                    assert(callee->base_id == ValueID::GlobalFunction);
+                    auto* ret_type = callee->type;
+                    assert(ret_type);
+                    Function* callee_function = reinterpret_cast<Function*>(callee);
+                    assert(callee_function);
+                    auto ret_type_not_void = ret_type->id != TypeID::Void;
                     if (ret_type_not_void)
                     {
                         printf("%%%llu = ", id1);
                     }
-                    printf("call i32 @%s(", callee->name.ptr);
+                    printf("call i32 @%s(", callee_function->name.get());
 
                     auto arg_count = operand_count - 1;
                     if (arg_count)
                     {
                         auto print_arg = [](Value* operand)
                         {
+#if 0
                             char type_buffer[64];
 
                             if (operand->typeID == TypeID::LabelType)
@@ -785,6 +1135,7 @@ namespace LLVM
                             {
                                 RNS_NOT_IMPLEMENTED;
                             }
+#endif
                         };
 
                         for (auto i = 1; i < arg_count; i++)
@@ -847,18 +1198,8 @@ namespace LLVM
     {
         // @Info: we shouldn't be null here. Void values are treated in the return printing case.
         assert(this);
-        switch (this->typeID)
+        switch (this->base_id)
         {
-            case TypeID::IntegerType:
-            {
-                auto* integer_value = (APInt*)this;
-                sprintf(buffer, "%llu", integer_value->value.eight_byte);
-            } break;
-            case TypeID::LabelType:
-            {
-                auto id = slot_tracker.find(this);
-                sprintf(buffer, "%%%llu", id);
-            } break;
             default:
                 RNS_NOT_IMPLEMENTED;
                 break;
@@ -867,70 +1208,14 @@ namespace LLVM
         return (const char*)buffer;
     }
 
-    struct Argument
-    {
-        Value value;
-        s64 arg_index;
-    };
 
-    struct Module
-    {
-        Buffer<Function> functions;
 
-        static Module create(Allocator* allocator)
-        {
-            Module module = {
-                .functions = module.functions.create(allocator, 64),
-            };
-
-            return module;
-        }
-
-        // @TODO: do typechecking
-        Function* find_function(String name, Type* type = nullptr);
-    };
-
-    struct Function
-    {
-        Value value;
-        Buffer<BasicBlock*> basic_blocks;
-        Argument* arguments;
-        s64 arg_count;
-        Module* parent;
-        // @TODO: symbol table
-
-        static Function* create(Module* module, Type* function_type, /* @TODO: linkage*/ String name)
-        {
-            auto* function = module->functions.allocate();
-            *function = {
-                .value = Value::New(TypeID::FunctionType, name, function_type),
-                .parent = module,
-                // @TODO: basic blocks, args...
-            };
-            return function;
-        }
-
-        static FunctionType* get_type(FunctionType* function_type)
-        {
-            // @TODO: to be implemented in the future
-            return function_type;
-        }
-
-        static FunctionType* get_type(Type* return_type, Slice<Type*> types, bool var_args)
-        {
-            RNS_NOT_IMPLEMENTED;
-            return nullptr;
-        }
-
-        void print(Allocator* allocator);
-    };
-
-    inline Function* Module::find_function(String name, Type* type)
+    inline Function* Module::find_function(StringView name, Type* type)
     {
         assert(functions.len);
         for (auto& function : functions)
         {
-            if (name.equal(function.value.name))
+            if (name.equal(function.name))
             {
                 return &function;
             }
@@ -948,11 +1233,14 @@ namespace LLVM
 
         u64 id;
 
-        static BasicBlock create(String name = {})
+        static BasicBlock create(Context& context, String name = {})
         {
             // @TODO: consider dealing with inserting the block in the middle of the array
             BasicBlock new_basic_block = {
-                .value = Value::New(TypeID::LabelType, name, Type::get_label()),
+                .value = {
+                    .type = context.get_label_type(),
+                    .base_id = ValueID::BasicBlock,
+                }
             };
 
             return new_basic_block;
@@ -1009,7 +1297,12 @@ namespace LLVM
         }
 
         char ret_type_buffer[64];
-        printf("\ndefine dso_local %s @%s(", type_to_string(this->value.type->function_t.ret_type, ret_type_buffer), value.name.ptr);
+        auto* type = this->value.type;
+        assert(type);
+        auto* function_type = reinterpret_cast<FunctionType*>(type);
+        auto* ret_type = function_type->ret_type;
+        assert(ret_type);
+        printf("\ndefine dso_local %s @%s(", type_to_string(ret_type, ret_type_buffer), name.get());
 
         // Argument printing
         if (arg_count)
@@ -1043,6 +1336,7 @@ namespace LLVM
 
     struct Builder
     {
+        Context& context;
         BasicBlock* current;
         Function* function;
         /// <summary> Guarantee pointer stability for members
@@ -1066,11 +1360,14 @@ namespace LLVM
         {
             Instruction i = {
                 .base {
-                    .value = Value::New(TypeID::LabelType),
+                    .value = {
+                        .type = context.get_pointer_type(type),
+                        .base_id = ValueID::Instruction,
+                    },
                     .id = InstructionID::Alloca,
                 },
                 .alloca_i = {
-                    .allocated_type = Type::get_pointer_type(type),
+                    .allocated_type = type,
                 }
             };
 
@@ -1081,13 +1378,15 @@ namespace LLVM
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(TypeID::VoidType),
+                    .value = {
+                        .type = context.get_void_type(),
+                        .base_id = ValueID::Instruction,
+                    },
                     .id = InstructionID::Store,
                 },
                 .operands = { value, ptr },
                 .operand_count = 2,
             };
-            assert((u32)value->typeID);
 
             return insert_at_end(i);
         }
@@ -1096,7 +1395,10 @@ namespace LLVM
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(TypeID::LabelType, name, type),
+                    .value = {
+                        .type = type,
+                        .base_id = ValueID::Instruction,
+                    },
                     .id = InstructionID::Load,
                 },
                 .operands = { value},
@@ -1124,7 +1426,7 @@ namespace LLVM
 
         BasicBlock* create_block(Allocator* allocator, String name = {})
         {
-            BasicBlock* basic_block = basic_block_buffer->append(BasicBlock::create(name));
+            BasicBlock* basic_block = basic_block_buffer->append(BasicBlock::create(context, name));
             // @TODO: this should change
             basic_block->instructions = basic_block->instructions.create(allocator, 64);
             return basic_block;
@@ -1137,7 +1439,10 @@ namespace LLVM
             {
                 Instruction i = {
                     .base = {
-                        .value = Value::New(TypeID::VoidType),
+                        .value = {
+                            .type = context.get_void_type(),
+                            .base_id = ValueID::Instruction,
+                        },
                         .id = InstructionID::Br,
                     },
                     .operands = { reinterpret_cast<Value*>(dst_block) },
@@ -1156,7 +1461,10 @@ namespace LLVM
             {
                 Instruction i = {
                     .base = {
-                        .value = Value::New(TypeID::VoidType),
+                        .value = {
+                            .type = context.get_void_type(),
+                            .base_id = ValueID::Instruction,
+                        },
                         .id = InstructionID::Br,
                     },
                     .operands = { reinterpret_cast<Value*>(true_block), reinterpret_cast<Value*>(else_block), condition },
@@ -1174,7 +1482,11 @@ namespace LLVM
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(TypeID::LabelType),
+                    // @TODO: we need to switch to a vector comparison for SIMD types
+                    .value = {
+                        .type = context.get_boolean_type(),
+                        .base_id = ValueID::Instruction,
+                    },
                     .id = InstructionID::ICmp,
                 },
                 .operands = { left, right },
@@ -1187,9 +1499,13 @@ namespace LLVM
 
         Instruction* create_add(Value* left, Value* right, const char* name = nullptr)
         {
+            assert(left->type == right->type);
             Instruction i = {
                 .base = {
-                    .value = Value::New(TypeID::LabelType),
+                    .value = {
+                        .type = left->type,
+                        .base_id = ValueID::Instruction,
+                    },
                     .id = InstructionID::Add,
                 },
                 .operands = { left, right },
@@ -1201,9 +1517,13 @@ namespace LLVM
 
         Instruction* create_sub(Value* left, Value* right, const char* name = nullptr)
         {
+            assert(left->type == right->type);
             Instruction i = {
                 .base = {
-                    .value = Value::New(TypeID::LabelType),
+                    .value = {
+                        .type = left->type,
+                        .base_id = ValueID::Instruction,
+                    },
                     .id = InstructionID::Sub,
                 },
                 .operands = { left, right },
@@ -1215,9 +1535,13 @@ namespace LLVM
 
         Instruction* create_mul(Value* left, Value* right, const char* name = nullptr)
         {
+            assert(left->type == right->type);
             Instruction i = {
                 .base = {
-                    .value = Value::New(TypeID::LabelType),
+                    .value = {
+                        .type = left->type,
+                        .base_id = ValueID::Instruction,
+                    },
                     .id = InstructionID::Mul,
                 },
                 .operands = { left, right },
@@ -1229,12 +1553,23 @@ namespace LLVM
 
         Instruction* create_ret(Value* value)
         {
+            auto* fn_type_base = function->type;
+            assert(fn_type_base);
+            assert(fn_type_base->id == TypeID::Function);
+            auto* function_type = reinterpret_cast<FunctionType*>(fn_type_base);
+
+            auto* function_ret_type = function_type->ret_type;
+            assert(function_ret_type);
+            assert(value->type);
+            assert(value->type == function_ret_type);
             if (!is_terminated())
             {
-
                 Instruction i = {
                     .base = {
-                        .value = Value::New(TypeID::VoidType),
+                        .value = {
+                            .type = value->type,
+                            .base_id = ValueID::Instruction,
+                        },
                         .id = InstructionID::Ret,
                     },
                     .operands = { value },
@@ -1255,7 +1590,10 @@ namespace LLVM
         {
             Instruction i = {
                 .base = {
-                    .value = Value::New(TypeID::LabelType, {}, callee->type),
+                    .value = {
+                        .type = callee->type,
+                        .base_id = ValueID::Instruction,
+                    },
                     .id = InstructionID::Call,
                 },
             };
@@ -1272,7 +1610,6 @@ namespace LLVM
 
             return insert_at_end(i);
         }
-
     private:
         Instruction* insert_alloca(Instruction alloca_instruction)
         {
@@ -1395,7 +1732,7 @@ namespace LLVM
 
                 node->conditional.exit_block = exit_block;
 
-                auto* condition = do_node(allocator, builder, ast_condition, Type::get_bool_type());
+                auto* condition = do_node(allocator, builder, ast_condition, builder.context.get_boolean_type());
                 assert(condition);
 
                 auto exit_block_in_use = true;
@@ -1459,7 +1796,7 @@ namespace LLVM
 
                 assert(ast_loop_prefix->block.statements.len == 1);
                 auto* ast_condition = ast_loop_prefix->block.statements[0];
-                auto* condition = do_node(allocator, builder, ast_condition, Type::get_bool_type());
+                auto* condition = do_node(allocator, builder, ast_condition, builder.context.get_boolean_type());
                 assert(condition);
 
                 builder.create_conditional_br(loop_body_block, loop_end_block, condition);
@@ -1498,20 +1835,23 @@ namespace LLVM
             case NodeType::VarDecl:
             {
                 auto* type = node->var_decl.type;
-                auto* value = node->var_decl.value;
-                auto* var_alloca = builder.create_alloca(type);
+                assert(type);
+                auto* rns_type = RNS::get_type(allocator, builder.context, type);
+                assert(rns_type);
+                auto* var_alloca = builder.create_alloca(rns_type);
                 node->var_decl.backend_ref = var_alloca;
+
+                auto* value = node->var_decl.value;
                 if (value)
                 {
-                    assert(type);
-                    auto* expression = do_node(allocator, builder, value, type);
+                    auto* expression = do_node(allocator, builder, value, rns_type);
                     assert(expression);
                     builder.create_store(expression, reinterpret_cast<Value*>(var_alloca), false);
                 }
             } break;
             case NodeType::IntLit:
             {
-                auto* result = APInt::get(allocator, Type::get_integer_type(32, true), node->int_lit.lit, node->int_lit.is_signed);
+                auto* result = ConstantInt::get(allocator, builder.context.get_integer_type(32), node->int_lit.lit, node->int_lit.is_signed);
                 assert(result);
                 return reinterpret_cast<Value*>(result);
             }
@@ -1533,8 +1873,10 @@ namespace LLVM
                             assert(var_decl);
                             auto* alloca_value = var_decl->var_decl.backend_ref;
                             auto* var_type = var_decl->var_decl.type;
-
-                            auto* right_value = do_node(allocator, builder, ast_right, var_type);
+                            assert(var_type);
+                            auto* rns_var_type = get_type(allocator, builder.context, var_type);
+                            assert(rns_var_type);
+                            auto* right_value = do_node(allocator, builder, ast_right, rns_var_type);
                             assert(right_value);
                             builder.create_store(right_value, reinterpret_cast<Value*>(alloca_value));
                         } break;
@@ -1604,7 +1946,9 @@ namespace LLVM
 
                 auto* type = var_decl->var_decl.type;
                 assert(type);
-                return reinterpret_cast<Value*>(builder.create_load(type, reinterpret_cast<Value*>(var_alloca)));
+                auto* rns_type = get_type(allocator, builder.context, type);
+                assert(rns_type);
+                return reinterpret_cast<Value*>(builder.create_load(rns_type, reinterpret_cast<Value*>(var_alloca)));
             } break;
             case NodeType::Ret:
             {
@@ -1652,7 +1996,7 @@ namespace LLVM
                 assert(invoke_expr->type == NodeType::Function);
                 auto function_name = invoke_expr->function.name;
                 // @TODO: do typechecking
-                auto* function = builder.module->find_function(function_name);
+                auto* function = builder.module->find_function(StringView::create(function_name.ptr, function_name.len));
                 assert(function);
 
                 auto arg_count = node->invoke_expr.arguments.len;
@@ -1667,14 +2011,15 @@ namespace LLVM
                     assert(arg_count <= 15);
                     auto& node_arg_buffer = node->invoke_expr.arguments;
                     auto arg_i = 0;
-                    auto* function_type = function->value.type;
-                    assert(function_type);
+                    auto* fn_type_base = function->value.type;
+                    assert(fn_type_base);
+                    auto* function_type = reinterpret_cast<FunctionType*>(fn_type_base);
                     for (auto* arg_node : node_arg_buffer)
                     {
                         auto* arg = do_node(allocator, builder, arg_node);
                         assert(arg);
                         // @TODO: this may be buggy
-                        arg->type = function_type->function_t.arg_types[arg_i];
+                        arg->type = function_type->arg_types[arg_i];
                         argument_buffer[arg_i++] = arg;
                     }
 
@@ -1713,10 +2058,12 @@ namespace LLVM
                             assert(pointer_to_dereference_decl->type == NodeType::VarDecl);
                             auto* pointer_type = pointer_to_dereference_decl->var_decl.type;
                             assert(pointer_type);
-                            assert(pointer_type->id == TypeID::PointerType);
+                            assert(pointer_type->id == User::TypeID::PointerType);
+                            auto* rns_ptr_type = get_type(allocator, builder.context, pointer_type);
+                            assert(rns_ptr_type);
                             auto* pointer_alloca = reinterpret_cast<Value*>(pointer_to_dereference_decl->var_decl.backend_ref);
                             assert(pointer_alloca);
-                            auto* pointer_load = builder.create_load(pointer_type, pointer_alloca);
+                            auto* pointer_load = builder.create_load(rns_ptr_type, pointer_alloca);
                             return reinterpret_cast<Value*>(pointer_load);
                         }
                         else
@@ -1727,11 +2074,14 @@ namespace LLVM
                             assert(pointer_to_dereference_decl->type == NodeType::VarDecl);
                             auto* pointer_type = pointer_to_dereference_decl->var_decl.type;
                             assert(pointer_type);
-                            assert(pointer_type->id == TypeID::PointerType);
+                            assert(pointer_type->id == User::TypeID::PointerType);
+                            auto* rns_pointer_type = get_type(allocator, builder.context, pointer_type);
+                            assert(rns_pointer_type);
                             auto* pointer_alloca = reinterpret_cast<Value*>(pointer_to_dereference_decl->var_decl.backend_ref);
                             assert(pointer_alloca);
-                            auto* pointer_load = builder.create_load(pointer_type, pointer_alloca);
-                            auto* deref_type = pointer_type->pointer_t.appointee;
+                            auto* pointer_load = builder.create_load(rns_pointer_type, pointer_alloca);
+                            auto* rns_pointer_type_def = reinterpret_cast<PointerType*>(rns_pointer_type);
+                            auto* deref_type = rns_pointer_type_def->type;
                             assert(deref_type);
                             auto* deref_expr = builder.create_load(deref_type, reinterpret_cast<Value*>(pointer_load));
                             return reinterpret_cast<Value*>(deref_expr);
@@ -1744,11 +2094,37 @@ namespace LLVM
             } break;
             case NodeType::ArrayLit:
             {
-                RNS_NOT_IMPLEMENTED;
+                auto count = node->array_lit.elements.len;
+                assert(count > 0);
+                auto* ast_type = node->array_lit.type;
+                auto* array_type = get_type(allocator, builder.context, ast_type);
+                assert(array_type);
+
+                Slice<Value*> arrvalues = {
+                    .ptr = new(allocator) Value* [count],
+                    .len = count,
+                };
+
+                for (auto i = 0; i < count; i++)
+                {
+                    auto* arrnode = node->array_lit.elements[i];
+                    assert(arrnode);
+                    arrvalues[i] = do_node(allocator, builder, arrnode);
+                    assert(arrvalues[i]);
+                }
+
+                auto* constarray = builder.context.get_constant_array(arrvalues, array_type);
+                return reinterpret_cast<Value*>(constarray);
             } break;
             case NodeType::Subscript:
             {
+                auto* expr = node->subscript.expr_ref;
+                auto* index = node->subscript.index_ref;
+                assert(expr);
+                assert(index);
+
                 RNS_NOT_IMPLEMENTED;
+
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
@@ -1768,18 +2144,22 @@ namespace LLVM
         InstructionBuffer instruction_buffer = instruction_buffer.create(&llvm_allocator, 1024 * 16);
         module.functions = module.functions.create(&llvm_allocator, function_declarations.len);
 
+        Context context = Context::create(&llvm_allocator);
+
         for (auto& ast_current_function : function_declarations)
         {
             auto* function_type = &ast_current_function->function.type->type_expr;
-            assert(function_type->id == TypeID::FunctionType);
-            Function::create(&module, function_type, ast_current_function->function.name);
+            assert(function_type->id == User::TypeID::FunctionType);
+            auto* rns_function_type = get_type(&llvm_allocator, context, function_type);
+            assert(rns_function_type);
+            Function::create(&module, rns_function_type, ast_current_function->function.name);
         }
 
         for (auto i = 0; i < function_declarations.len; i++)
         {
             auto& ast_current_function = function_declarations[i];
             auto* function = &module.functions[i];
-            Builder builder = {};
+            Builder builder = { .context = context, };
             builder.basic_block_buffer = &basic_block_buffer;
             builder.instruction_buffer = &instruction_buffer;
             builder.function = function;
@@ -1794,9 +2174,12 @@ namespace LLVM
             builder.set_block(entry_block);
 
             function->arg_count = ast_current_function->function.arguments.len;
-            auto ret_type = builder.function->value.type->function_t.ret_type;
+            auto* function_base_type = builder.function->type;
+            auto* function_type = reinterpret_cast<FunctionType*>(function_base_type);
+            auto ret_type = function_type->ret_type;
+            assert(ret_type);
 
-            bool ret_type_void = ret_type->id == TypeID::VoidType;
+            bool ret_type_void = ret_type->id == TypeID::Void;
             builder.explicit_return = false;
 
             for (auto* st_node : ast_main_scope_statements)
@@ -1852,16 +2235,21 @@ namespace LLVM
                     assert(arg_node->type == NodeType::VarDecl);
                     auto* arg_type = arg_node->var_decl.type;
                     assert(arg_type);
+                    auto* rns_arg_type = get_type(&llvm_allocator, context, arg_type);
+                    assert(rns_arg_type);
                     assert(arg_node->var_decl.is_fn_arg);
                     auto arg_name = arg_node->var_decl.name;
 
                     auto* arg = &function->arguments[arg_index++];
                     *arg = {
-                        .value = Value::New(TypeID::LabelType, arg_name, arg_type),
+                        .value = {
+                            .type = rns_arg_type,
+                            .base_id = ValueID::Argument,
+                        },
                         .arg_index = arg_index,
                     };
 
-                    auto* arg_alloca = builder.create_alloca(arg_type);
+                    auto* arg_alloca = builder.create_alloca(rns_arg_type);
                     arg_node->var_decl.backend_ref = arg_alloca;
 
                     builder.create_store(reinterpret_cast<Value*>(arg), reinterpret_cast<Value*>(arg_alloca));

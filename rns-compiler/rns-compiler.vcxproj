@@ -19,13 +19,6 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\dependencies\imgui-1.81\backends\imgui_impl_opengl3.cpp" />
-    <ClCompile Include="..\dependencies\imgui-1.81\backends\imgui_impl_sdl.cpp" />
-    <ClCompile Include="..\dependencies\imgui-1.81\imgui.cpp" />
-    <ClCompile Include="..\dependencies\imgui-1.81\imgui_demo.cpp" />
-    <ClCompile Include="..\dependencies\imgui-1.81\imgui_draw.cpp" />
-    <ClCompile Include="..\dependencies\imgui-1.81\imgui_tables.cpp" />
-    <ClCompile Include="..\dependencies\imgui-1.81\imgui_widgets.cpp" />
     <ClCompile Include="..\dependencies\rns-lib\lib\src\data_structures.cpp">
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)dependencies/imgui-1.81;$(SolutionDir)dependencies/imgui-1.81/backends;$(SolutionDir)dependencies/SDL2-2.0.14/include;$(SolutionDir)dependencies/glew-2.2.0/include;$(SUPERLUMINAL_API_DIR)/include;$(LLVM_DIR)/$(Configuration)/include;$(SolutionDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories Condition="'$(Configuration)|$(Platform)'=='ReleaseDebug|x64'">$(SolutionDir)dependencies/imgui-1.81;$(SolutionDir)dependencies/imgui-1.81/backends;$(SolutionDir)dependencies/SDL2-2.0.14/include;$(SolutionDir)dependencies/glew-2.2.0/include;$(SUPERLUMINAL_API_DIR)/include;$(LLVM_DIR)/$(Configuration)/include;$(SolutionDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
@@ -34,23 +27,13 @@
     </ClCompile>
     <ClCompile Include="..\dependencies\rns-lib\lib\src\os.cpp" />
     <ClCompile Include="src\compiler_types.cpp" />
-    <ClCompile Include="src\my_imgui.cpp" />
     <ClCompile Include="src\lexer.cpp" />
     <ClCompile Include="src\llvm_bytecode.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\parser.cpp" />
-    <ClCompile Include="src\typechecker.cpp" />
     <ClCompile Include="src\x86_64.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\dependencies\imgui-1.81\backends\imgui_impl_opengl3.h" />
-    <ClInclude Include="..\dependencies\imgui-1.81\backends\imgui_impl_sdl.h" />
-    <ClInclude Include="..\dependencies\imgui-1.81\imconfig.h" />
-    <ClInclude Include="..\dependencies\imgui-1.81\imgui.h" />
-    <ClInclude Include="..\dependencies\imgui-1.81\imgui_internal.h" />
-    <ClInclude Include="..\dependencies\imgui-1.81\imstb_rectpack.h" />
-    <ClInclude Include="..\dependencies\imgui-1.81\imstb_textedit.h" />
-    <ClInclude Include="..\dependencies\imgui-1.81\imstb_truetype.h" />
     <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\arch.h" />
     <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\compiler.h" />
     <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\c_containers.h" />
@@ -60,11 +43,9 @@
     <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\profiler.h" />
     <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\types.h" />
     <ClInclude Include="src\compiler_types.h" />
-    <ClInclude Include="src\my_imgui.h" />
     <ClInclude Include="src\lexer.h" />
     <ClInclude Include="src\llvm_bytecode.h" />
     <ClInclude Include="src\parser.h" />
-    <ClInclude Include="src\typechecker.h" />
     <ClInclude Include="src\x86_64.h" />
     <ClInclude Include="src\x86_64_encoding.h" />
   </ItemGroup>
@@ -155,7 +136,7 @@
       <ConformanceMode>Default</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalIncludeDirectories>$(SolutionDir)dependencies/imgui-1.81;$(SolutionDir)dependencies/imgui-1.81/backends;$(SolutionDir)dependencies/SDL2-2.0.14/include;$(SolutionDir)dependencies/glew-2.2.0/include;$(SUPERLUMINAL_API_DIR)/include;$(LLVM_DIR)/$(Configuration)/include;$(SolutionDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SUPERLUMINAL_API_DIR)/include;$(LLVM_DIR)/$(Configuration)/include;$(SolutionDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
@@ -165,8 +146,8 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AssemblyDebug>true</AssemblyDebug>
-      <AdditionalLibraryDirectories>$(SolutionDir)dependencies/SDL2-2.0.14/lib;$(SolutionDir)dependencies/glew-2.2.0/lib;$(SUPERLUMINAL_API_DIR)/lib/x64;$(LLVM_DIR)/$(Configuration)/lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opengl32.lib;SDL2.lib;glew32s.lib;PerformanceAPI_MT.lib;LLVMAggressiveInstCombine.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBinaryFormat.lib;LLVMBitReader.lib;LLVMBitstreamReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMCoverage.lib;LLVMRemarks.lib;LLVMSupport.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SUPERLUMINAL_API_DIR)/lib/x64;$(LLVM_DIR)/$(Configuration)/lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>PerformanceAPI_MT.lib;LLVMAggressiveInstCombine.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBinaryFormat.lib;LLVMBitReader.lib;LLVMBitstreamReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMCoverage.lib;LLVMRemarks.lib;LLVMSupport.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseDebug|x64'">
@@ -177,7 +158,7 @@
       <ConformanceMode>Default</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalIncludeDirectories>$(SolutionDir)dependencies/imgui-1.81;$(SolutionDir)dependencies/imgui-1.81/backends;$(SolutionDir)dependencies/SDL2-2.0.14/include;$(SolutionDir)dependencies/glew-2.2.0/include;$(SUPERLUMINAL_API_DIR)/include;$(LLVM_DIR)/$(Configuration)/include;$(SolutionDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SUPERLUMINAL_API_DIR)/include;$(LLVM_DIR)/$(Configuration)/include;$(SolutionDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <Optimization>MaxSpeed</Optimization>
@@ -209,8 +190,8 @@
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
       <AssemblyDebug>true</AssemblyDebug>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
-      <AdditionalLibraryDirectories>$(SolutionDir)dependencies/SDL2-2.0.14/lib;$(SolutionDir)dependencies/glew-2.2.0/lib;$(SUPERLUMINAL_API_DIR)/lib/x64;$(LLVM_DIR)/$(Configuration)/lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opengl32.lib;SDL2.lib;glew32s.lib;PerformanceAPI_MT.lib;LLVMAggressiveInstCombine.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBinaryFormat.lib;LLVMBitReader.lib;LLVMBitstreamReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMCoverage.lib;LLVMRemarks.lib;LLVMSupport.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SUPERLUMINAL_API_DIR)/lib/x64;$(LLVM_DIR)/$(Configuration)/lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>PerformanceAPI_MT.lib;LLVMAggressiveInstCombine.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBinaryFormat.lib;LLVMBitReader.lib;LLVMBitstreamReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMCoverage.lib;LLVMRemarks.lib;LLVMSupport.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Superluminal|x64'">
@@ -221,7 +202,7 @@
       <ConformanceMode>Default</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalIncludeDirectories>$(SolutionDir)dependencies/imgui-1.81;$(SolutionDir)dependencies/imgui-1.81/backends;$(SolutionDir)dependencies/SDL2-2.0.14/include;$(SolutionDir)dependencies/glew-2.2.0/include;$(SUPERLUMINAL_API_DIR)/include;$(LLVM_DIR)/$(Configuration)/include;$(SolutionDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SUPERLUMINAL_API_DIR)/include;$(LLVM_DIR)/$(Configuration)/include;$(SolutionDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <Optimization>MaxSpeed</Optimization>
@@ -253,8 +234,8 @@
       <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
       <AssemblyDebug>true</AssemblyDebug>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
-      <AdditionalLibraryDirectories>$(SolutionDir)dependencies/SDL2-2.0.14/lib;$(SolutionDir)dependencies/glew-2.2.0/lib;$(SUPERLUMINAL_API_DIR)/lib/x64;$(LLVM_DIR)/$(Configuration)/lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opengl32.lib;SDL2.lib;glew32s.lib;PerformanceAPI_MT.lib;LLVMAggressiveInstCombine.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBinaryFormat.lib;LLVMBitReader.lib;LLVMBitstreamReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMCoverage.lib;LLVMRemarks.lib;LLVMSupport.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SUPERLUMINAL_API_DIR)/lib/x64;$(LLVM_DIR)/$(Configuration)/lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>PerformanceAPI_MT.lib;LLVMAggressiveInstCombine.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBinaryFormat.lib;LLVMBitReader.lib;LLVMBitstreamReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMCoverage.lib;LLVMRemarks.lib;LLVMSupport.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -267,7 +248,7 @@
       <ConformanceMode>Default</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <AdditionalIncludeDirectories>$(SolutionDir)dependencies/imgui-1.81;$(SolutionDir)dependencies/imgui-1.81/backends;$(SolutionDir)dependencies/SDL2-2.0.14/include;$(SolutionDir)dependencies/glew-2.2.0/include;$(SUPERLUMINAL_API_DIR)/include;$(LLVM_DIR)/$(Configuration)/include;$(SolutionDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SUPERLUMINAL_API_DIR)/include;$(LLVM_DIR)/$(Configuration)/include;$(SolutionDir)dependencies/rns-lib/lib/include</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <ExpandAttributedSource>true</ExpandAttributedSource>
@@ -295,8 +276,8 @@
       <AssemblyDebug>true</AssemblyDebug>
       <MapExports>true</MapExports>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
-      <AdditionalLibraryDirectories>$(SolutionDir)dependencies/SDL2-2.0.14/lib;$(SolutionDir)dependencies/glew-2.2.0/lib;$(SUPERLUMINAL_API_DIR)/lib/x64;$(LLVM_DIR)/$(Configuration)/lib</AdditionalLibraryDirectories>
-      <AdditionalDependencies>opengl32.lib;SDL2.lib;glew32s.lib;PerformanceAPI_MT.lib;LLVMAggressiveInstCombine.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBinaryFormat.lib;LLVMBitReader.lib;LLVMBitstreamReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMCoverage.lib;LLVMRemarks.lib;LLVMSupport.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SUPERLUMINAL_API_DIR)/lib/x64;$(LLVM_DIR)/$(Configuration)/lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>PerformanceAPI_MT.lib;LLVMAggressiveInstCombine.lib;LLVMAnalysis.lib;LLVMAsmParser.lib;LLVMAsmPrinter.lib;LLVMBinaryFormat.lib;LLVMBitReader.lib;LLVMBitstreamReader.lib;LLVMBitWriter.lib;LLVMCodeGen.lib;LLVMCore.lib;LLVMCoverage.lib;LLVMRemarks.lib;LLVMSupport.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

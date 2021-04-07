@@ -7,88 +7,114 @@
 using RNS::Allocator;
 
 extern "C" s32 printf(const char*, ...);
-
-enum class UnaryOp
+namespace User
 {
-    None,
-    AddressOf,
-    PointerDereference,
-};
+    struct MetaContext
+    {
+        const char* filename;
+        const char* function_name;
+        u32 line_number;
+        u32 column_number;
+    };
 
-enum class BinOp
-{
-    None,
-    Plus,
-    Minus,
-    Mul,
-    VariableDecl,
-    Assign,
-    Subscript,
-    Cmp_Equal,
-    Cmp_NotEqual,
-    Cmp_LessThan,
-    Cmp_GreaterThan,
-    Cmp_LessThanOrEqual,
-    Cmp_GreaterThanOrEqual,
-    Count,
-};
+    struct Compiler
+    {
+        enum class Subsystem : u8
+        {
+            Lexer,
+            Parser,
+            IR,
+            MachineCodeGen,
+            Count,
+        };
 
-enum class ValueType
-{
-    RValue,
-    LValue,
-};
+        RNS::Allocator page_allocator;
+        RNS::Allocator common_allocator;
+        Subsystem subsystem;
+        u32 errors_reported;
 
-inline bool is_cmp_binop(BinOp binop)
-{
-    return binop >= BinOp::Cmp_Equal && binop <= BinOp::Cmp_GreaterThanOrEqual;
-}
+        void print_error(MetaContext context, const char* message, ...);
+    };
 
-enum class OperatorPrecedenceRule
-{
-    Unary_ArraySubscript_FunctionCall_MemberAccess_CompoundLiteral,
-    Unary_LogicalNot_BitwiseNot_Cast_Dereference_AddressOf_SizeOf_AlignOf,
-    Binary_Multiplication_Division_Remainder,
-    Binary_Addition_Substraction,
-    Binary_BitwiseLeftShit_BitwiseRightShift,
-    Binary_RelationalOperators,
-    Binary_RelationalOperators_EqualNotEqual,
-    Binary_BitwiseAND,
-    Binary_BitwiseXOR,
-    Binary_BitwiseOR,
-    Binary_LogicalAND,
-    Binary_LogicalOR,
-    Binary_AssignmentOperators,
-};
+    enum class UnaryOp
+    {
+        None,
+        AddressOf,
+        PointerDereference,
+    };
 
-struct OperatorPrecedence
-{
-    OperatorPrecedenceRule rules[(u32)BinOp::Count];
-};
+    enum class BinOp
+    {
+        None,
+        Plus,
+        Minus,
+        Mul,
+        VariableDecl,
+        Assign,
+        Subscript,
+        Cmp_Equal,
+        Cmp_NotEqual,
+        Cmp_LessThan,
+        Cmp_GreaterThan,
+        Cmp_LessThanOrEqual,
+        Cmp_GreaterThanOrEqual,
+        Count,
+    };
 
-inline constexpr OperatorPrecedence initialize_precedence_rules()
-{
+    enum class ValueType
+    {
+        RValue,
+        LValue,
+    };
+
+    inline bool is_cmp_binop(BinOp binop)
+    {
+        return binop >= BinOp::Cmp_Equal && binop <= BinOp::Cmp_GreaterThanOrEqual;
+    }
+
+    enum class OperatorPrecedenceRule
+    {
+        Unary_ArraySubscript_FunctionCall_MemberAccess_CompoundLiteral,
+        Unary_LogicalNot_BitwiseNot_Cast_Dereference_AddressOf_SizeOf_AlignOf,
+        Binary_Multiplication_Division_Remainder,
+        Binary_Addition_Substraction,
+        Binary_BitwiseLeftShit_BitwiseRightShift,
+        Binary_RelationalOperators,
+        Binary_RelationalOperators_EqualNotEqual,
+        Binary_BitwiseAND,
+        Binary_BitwiseXOR,
+        Binary_BitwiseOR,
+        Binary_LogicalAND,
+        Binary_LogicalOR,
+        Binary_AssignmentOperators,
+    };
+
+    struct OperatorPrecedence
+    {
+        OperatorPrecedenceRule rules[(u32)BinOp::Count];
+    };
+
+    inline constexpr OperatorPrecedence initialize_precedence_rules()
+    {
 #define precedence_rule(_operator_, _rule_) operator_precedence.rules[(u32)BinOp:: ## _operator_] = OperatorPrecedenceRule:: ## _rule_
-    OperatorPrecedence operator_precedence;
-    precedence_rule(Plus, Binary_Addition_Substraction);
-    precedence_rule(Minus, Binary_Addition_Substraction);
-    precedence_rule(Mul, Binary_Multiplication_Division_Remainder);
-    precedence_rule(Assign, Binary_AssignmentOperators);
-    precedence_rule(Cmp_Equal, Binary_RelationalOperators_EqualNotEqual);
-    precedence_rule(Cmp_NotEqual, Binary_RelationalOperators_EqualNotEqual);
-    precedence_rule(Cmp_LessThan, Binary_RelationalOperators);
-    precedence_rule(Cmp_GreaterThan, Binary_RelationalOperators);
-    precedence_rule(Cmp_LessThanOrEqual, Binary_RelationalOperators);
-    precedence_rule(Cmp_GreaterThanOrEqual, Binary_RelationalOperators);
+        OperatorPrecedence operator_precedence;
+        precedence_rule(Plus, Binary_Addition_Substraction);
+        precedence_rule(Minus, Binary_Addition_Substraction);
+        precedence_rule(Mul, Binary_Multiplication_Division_Remainder);
+        precedence_rule(Assign, Binary_AssignmentOperators);
+        precedence_rule(Cmp_Equal, Binary_RelationalOperators_EqualNotEqual);
+        precedence_rule(Cmp_NotEqual, Binary_RelationalOperators_EqualNotEqual);
+        precedence_rule(Cmp_LessThan, Binary_RelationalOperators);
+        precedence_rule(Cmp_GreaterThan, Binary_RelationalOperators);
+        precedence_rule(Cmp_LessThanOrEqual, Binary_RelationalOperators);
+        precedence_rule(Cmp_GreaterThanOrEqual, Binary_RelationalOperators);
 #undef precedence_rule
 
-    return operator_precedence;
-}
+        return operator_precedence;
+    }
 
-inline OperatorPrecedence operator_precedence = initialize_precedence_rules();
+    inline OperatorPrecedence operator_precedence = initialize_precedence_rules();
 
-namespace Typing
-{
     enum class TypeID : u8
     {
         // Primitive types
@@ -159,7 +185,7 @@ namespace Typing
     };
 
     using TypeRefBuffer = RNS::Buffer<Type*>;
-    
+
     struct FunctionType
     {
         TypeRefBuffer arg_types;
@@ -176,7 +202,7 @@ namespace Typing
     struct Type
     {
         TypeID id;
-        RNS::String name;
+        RNS::StringView name;
         union
         {
             IntegerType integer_t;
@@ -188,27 +214,26 @@ namespace Typing
             ArrayType array_t;
         };
 
-        static TypeBuffer type_buffer;
-        static void init(Allocator* allocator, s64 count);
-        static Type* get(RNS::String name);
-        static Type* get_pointer_type(Type* type);
-        static Type* get_void_type();
-        static Type* get_integer_type(u16 bits, bool is_signed);
-        static Type* get_label();
-        static Type* get_bool_type();
+        static Type* get_void_type(TypeBuffer& type_declarations);
+        static Type* get_label_type(TypeBuffer& type_declarations);
+        static Type* get_integer_type(u16 bits, bool signedness, TypeBuffer& type_declarations);
+        static Type* get_pointer_type(Type* type, TypeBuffer& type_declarations);
+        static Type* get_array_type(Type* type, s64 count, TypeBuffer& type_declarations);
+        static TypeBuffer init_type_system(Allocator* allocator);
     };
-
-    struct ConstantInt
-    {
-        u64 lit;
-        u16 bit_count;
-        bool is_signed;
-        u8 padding[5];
-    };
-    static_assert(sizeof(ConstantInt) == 2 * sizeof(s64));
 }
 
-using namespace Typing;
+using namespace User;
+
+struct ConstantInt
+{
+    u64 lit;
+    u16 bit_count;
+    bool is_signed;
+    u8 padding[5];
+};
+static_assert(sizeof(ConstantInt) == 2 * sizeof(s64));
+
 namespace Lexer
 {
     enum class TokenID : u8
@@ -607,34 +632,4 @@ namespace AST
     };
 }
 
-namespace RNS
-{
-    struct MetaContext
-    {
-        const char* filename;
-        const char* function_name;
-        u32 line_number;
-        u32 column_number;
-    };
-
-    struct Compiler
-    {
-        enum class Subsystem : u8
-        {
-            Lexer,
-            Parser,
-            IR,
-            MachineCodeGen,
-            Count,
-        };
-
-        RNS::Allocator page_allocator;
-        RNS::Allocator common_allocator;
-        Subsystem subsystem;
-        u32 errors_reported;
-
-        void print_error(MetaContext context, const char* message, ...);
-    };
-}
-
-using RNS::Compiler;
+using User::Compiler;

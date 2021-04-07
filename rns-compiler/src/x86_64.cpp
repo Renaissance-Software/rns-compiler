@@ -502,7 +502,7 @@ struct Instruction
     Mnemonic mnemonic;
     Operand operands[4];
     Label* label;
-    MetaContext context;
+    User::MetaContext context;
 };
 
 struct ImportSymbol
@@ -583,7 +583,7 @@ struct BufferU8 : public Buffer<u8>
 
 struct InstructionBuffer : public Buffer<Instruction>
 {
-    void append(Instruction instruction, MetaContext metacontext)
+    void append(Instruction instruction, User::MetaContext metacontext)
     {
         instruction.context = metacontext;
         append(instruction);

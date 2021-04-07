@@ -1,3 +1,6 @@
 [submodule "rns-compiler/dependencies/rns-lib"]
 	path = rns-compiler/dependencies/rns-lib
 	url = https://github.com/Renaissance-Software/rns-lib.git
+[submodule "dependencies\\rns-lib"]
+	path = dependencies\\rns-lib
+	url = https://github.com/Renaissance-Software/rns-lib

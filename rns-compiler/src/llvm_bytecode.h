@@ -3,9 +3,8 @@
 #include "compiler_types.h"
 
 
-namespace LLVM
+namespace RNS
 {
     using namespace AST;
-    using namespace RNS;
     void encode(Compiler& compiler, NodeBuffer& node_buffer, FunctionTypeBuffer& function_type_declarations, FunctionDeclarationBuffer& function_declarations);
 }

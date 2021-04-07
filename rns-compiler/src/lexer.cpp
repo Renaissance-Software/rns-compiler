@@ -5,8 +5,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "typechecker.h"
-
 using namespace RNS;
 #define CaseAlphabeticUpper \
 case 'A':\
@@ -154,28 +152,30 @@ struct NameMatch
     };
 };
 
-static inline NameMatch match_name(const char* name, u32 len)
+static inline NameMatch match_name(StringView name, TypeBuffer& type_declarations)
 {
     for (auto i = 0; i < keyword_count; i++)
     {
         const char* kw_str = keywords[i];
         auto kw_len = strlen(kw_str);
-        if (kw_len == len && strncmp(kw_str, name, len) == 0)
+        if (kw_len == name.len && strncmp(kw_str, name.get(), name.len) == 0)
         {
             return { .token_id = TokenID::Keyword, .keyword = static_cast<KeywordID>(i) };
         }
     }
 
-    auto* type = Type::get({ name, len });
-    if (type)
+    for (auto& type : type_declarations)
     {
-        return { .token_id = TokenID::Type, .type = type };
+        if (type.name.equal(name))
+        {
+            return { .token_id = TokenID::Type, .type = &type };
+        }
     }
     
     return { .token_id = TokenID::Symbol };
 }
 
-LexerResult lex(Compiler& compiler, RNS::String file_content)
+LexerResult lex(Compiler& compiler, RNS::String file_content, TypeBuffer& type_declarations)
 {
     RNS_PROFILE_FUNCTION();
     compiler.subsystem = Compiler::Subsystem::Lexer;
@@ -242,7 +242,9 @@ LexerResult lex(Compiler& compiler, RNS::String file_content)
                 end = i;
                 i--;
                 auto len = end - start;
-                auto match = match_name(&token_buffer.file[start], len);
+                const char* string_view_ptr = &token_buffer.file[start];
+                StringView name = StringView::create(string_view_ptr, len);
+                auto match = match_name(name, type_declarations);
                 Token* t = token_buffer.new_token(match.token_id, start, end, token_buffer.line_count, start - current_line_start);
                 switch (match.token_id)
                 {
