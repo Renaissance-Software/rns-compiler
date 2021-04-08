@@ -132,6 +132,10 @@ namespace RNS
         Slice<Value*> array_values;
     };
 
+    struct Intrinsic
+    {
+    };
+
     struct Context
     {
         Type void_type, label_type;
@@ -280,7 +284,6 @@ namespace RNS
         }
     };
 
-
     Type* get_type(Allocator* allocator, Context& context, User::Type* type)
     {
         assert(type);
@@ -355,14 +358,13 @@ namespace RNS
         return nullptr;
     }
 
-
     /*
     Unary instruction,
     unary operator
     binary operator,
     cast instruction,
     cmp instruction,
-    call instruction, (intrinsics are based of this)
+    call instruction, (intrinsics in LLVM are based of this)
         -instrinsic
 
     */
@@ -967,8 +969,7 @@ namespace RNS
         StringView name;
         Type* type;
         Buffer<BasicBlock*> basic_blocks;
-        Argument* arguments;
-        s64 arg_count;
+        Slice<Argument> arguments;
         Module* parent;
         // @TODO: symbol table
 
@@ -1270,9 +1271,9 @@ namespace RNS
         assert(slot_tracker.starting_id == 0);
         assert(slot_tracker.next_id == 0);
 
-        for (auto i = 0; i < arg_count; i++)
+        for (auto& arg: arguments)
         {
-            slot_tracker.new_id(&arguments[i]);
+            slot_tracker.new_id(&arg);
         }
         slot_tracker.new_id(nullptr);
 
@@ -1305,10 +1306,10 @@ namespace RNS
         printf("\ndefine dso_local %s @%s(", type_to_string(ret_type, ret_type_buffer), name.get());
 
         // Argument printing
-        if (arg_count)
+        if (arguments.len)
         {
             auto buffer_len = 0;
-            auto last_index = arg_count - 1;
+            auto last_index = arguments.len - 1;
             char type_buffer[64];
             for (auto i = 0; i < last_index; i++)
             {
@@ -1610,6 +1611,31 @@ namespace RNS
 
             return insert_at_end(i);
         }
+
+        Instruction* create_inbounds_GEP(Type* type, Value* pointer, Slice<Value*> indices)
+        {
+            Instruction i = {
+                .base = {
+                    .value = {
+                        .type = type,
+                        .base_id = ValueID::Instruction,
+                    },
+                    .id = InstructionID::GetElementPtr,
+                },
+            };
+
+            assert(indices.len == 2);
+            i.operands[0] = pointer;
+
+            int it = 1;
+            for (auto& index_value : indices)
+            {
+                i.operands[it++] = index_value;
+            }
+            i.operand_count = it;
+
+            return insert_at_end(i);
+        }
     private:
         Instruction* insert_alloca(Instruction alloca_instruction)
         {
@@ -1655,7 +1681,6 @@ namespace RNS
             return i;
         }
     };
-
 
     bool introspect_for_conditional_allocas(Node* scope)
     {
@@ -1844,9 +1869,27 @@ namespace RNS
                 auto* value = node->var_decl.value;
                 if (value)
                 {
-                    auto* expression = do_node(allocator, builder, value, rns_type);
-                    assert(expression);
-                    builder.create_store(expression, reinterpret_cast<Value*>(var_alloca), false);
+                    switch (rns_type->id)
+                    {
+                        case TypeID::Array:
+                        {
+                            auto* expression = do_node(allocator, builder, value, rns_type);
+                            assert(expression);
+                            assert(expression->base_id == ValueID::ConstantArray);
+                            // call intrinsic memcpy to copy the array constant to the array alloca
+                            RNS_NOT_IMPLEMENTED;
+                        } break;
+                        default:
+                        {
+                            auto* expression = do_node(allocator, builder, value, rns_type);
+                            assert(expression);
+                            builder.create_store(expression, reinterpret_cast<Value*>(var_alloca), false);
+                        } break;
+                    }
+                }
+                else
+                {
+                    RNS_NOT_IMPLEMENTED;
                 }
             } break;
             case NodeType::IntLit:
@@ -2122,9 +2165,33 @@ namespace RNS
                 auto* index = node->subscript.index_ref;
                 assert(expr);
                 assert(index);
+                auto* index_value = do_node(allocator, builder, index);
+                assert(index_value);
 
-                RNS_NOT_IMPLEMENTED;
+                Value* alloca_value = nullptr;
+                switch (expr->type)
+                {
+                    case NodeType::VarExpr:
+                    {
+                        auto* var_decl = expr->var_expr.mentioned;
+                        assert(var_decl);
+                        alloca_value = reinterpret_cast<Value*>(var_decl->var_decl.backend_ref);
+                        assert(alloca_value);
+                    } break;
+                    default:
+                        RNS_NOT_IMPLEMENTED;
+                        break;
+                }
 
+                assert(alloca_value->base_id == ValueID::Instruction);
+                auto* alloca_instruction = reinterpret_cast<Instruction*>(alloca_value);
+                auto* alloca_type = alloca_instruction->alloca_i.allocated_type;
+                assert(alloca_type);
+                auto* zero_value = ConstantInt::get(allocator, builder.context.get_integer_type(32), 0, false);
+                Value* indices[] = { reinterpret_cast<Value*>(zero_value), index_value };
+                Slice<Value*> indices_slice = { indices, rns_array_length(indices) };
+                auto* gep = builder.create_inbounds_GEP(alloca_type, alloca_value, indices_slice);
+                return reinterpret_cast<Value*>(gep);
             } break;
             default:
                 RNS_NOT_IMPLEMENTED;
@@ -2173,7 +2240,7 @@ namespace RNS
             builder.append_to_function(entry_block);
             builder.set_block(entry_block);
 
-            function->arg_count = ast_current_function->function.arguments.len;
+            function->arguments.len = ast_current_function->function.arguments.len;
             auto* function_base_type = builder.function->type;
             auto* function_type = reinterpret_cast<FunctionType*>(function_base_type);
             auto ret_type = function_type->ret_type;
@@ -2225,10 +2292,10 @@ namespace RNS
             }
 
             // Arguments
-            if (function->arg_count)
+            if (function->arguments.len)
             {
-                function->arguments = new (&llvm_allocator) Argument[function->arg_count];
-                assert(function->arguments);
+                function->arguments.ptr = new (&llvm_allocator) Argument[function->arguments.len];
+                assert(function->arguments.ptr);
                 auto arg_index = 0;
                 for (auto* arg_node : ast_current_function->function.arguments)
                 {
