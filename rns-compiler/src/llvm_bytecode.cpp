@@ -61,6 +61,7 @@ namespace RNS
         GlobalVariable,
         MemoryAccess,
         Instruction,
+        Intrinsic, // In this we defer from llvm, since LLVM doesn't have a Intrinsic category, but they are call instruction children
         Operator,
         OperatorAddrSpaceCast,
         OperatorBitCast,
@@ -132,331 +133,6 @@ namespace RNS
         Slice<Value*> array_values;
     };
 
-    struct Intrinsic
-    {
-    };
-
-    struct Context
-    {
-        Type void_type, label_type;
-        IntegerType i1, i8, i16, i32, i64;
-        FloatType f32, f64;
-        // @TODO: add vector types and custom types
-
-        Buffer<FunctionType> function_types;
-        Buffer<ArrayType> array_types;
-        Buffer<PointerType> pointer_types;
-        Buffer<ConstantArray> constant_arrays;
-
-        static Context create(Allocator* allocator)
-        {
-            auto get_base_type = [](TypeID type, const char* name)
-            {
-                Type base = {
-                    .name = StringView::create(name, strlen(name)),
-                    .id = type,
-                };
-
-                return base;
-            };
-
-            Context context = {};
-            context.void_type = get_base_type(TypeID::Void, "void");
-            context.label_type = get_base_type(TypeID::Label, "label");
-
-            auto get_integer_type = [&](u16 bits, const char* name)
-            {
-                IntegerType integer_type = {
-                    .base = get_base_type(TypeID::Integer, name),
-                    .bits = bits,
-                };
-
-                return integer_type;
-            };
-
-            context.i1 = get_integer_type(1, "i1");
-            context.i8 = get_integer_type(8, "i8");
-            context.i16 = get_integer_type(16, "i16");
-            context.i32 = get_integer_type(32, "i32");
-            context.i64 = get_integer_type(64, "i64");
-
-            auto get_float_type = [&](u16 bits, const char* name)
-            {
-                FloatType float_type = {
-                    .base = get_base_type(TypeID::Integer, name),
-                    .bits = bits,
-                };
-
-                return float_type;
-            };
-
-            context.f32 = get_float_type(32, "f32");
-            context.f64 = get_float_type(64, "f64");
-
-            context.function_types = context.function_types.create(allocator, 1024);
-            context.array_types = context.array_types.create(allocator, 1024);
-            context.pointer_types = context.pointer_types.create(allocator, 1024);
-            context.constant_arrays = context.constant_arrays.create(allocator, 1024);
-
-
-            return context;
-        }
-
-        Type* get_void_type()
-        {
-            return &void_type;
-        }
-
-        Type* get_label_type()
-        {
-            return &label_type;
-        }
-
-        Type* get_boolean_type()
-        {
-            return reinterpret_cast<Type*>(&i1);
-        }
-
-        Type* get_integer_type(u16 bits)
-        {
-            switch (bits)
-            {
-                case 1:
-                    return reinterpret_cast<Type*>(&i1);
-                case 8:
-                    return reinterpret_cast<Type*>(&i8);
-                case 16:
-                    return reinterpret_cast<Type*>(&i16);
-                case 32:
-                    return reinterpret_cast<Type*>(&i32);
-                case 64:
-                    return reinterpret_cast<Type*>(&i64);
-                default:
-                    RNS_NOT_IMPLEMENTED;
-            }
-
-            return nullptr;
-        }
-
-        Type* get_float_type(u16 bits)
-        {
-            switch (bits)
-            {
-                case 32:
-                    return reinterpret_cast<Type*>(&f32);
-                case 64:
-                    return reinterpret_cast<Type*>(&f64);
-                default:
-                    RNS_NOT_IMPLEMENTED;
-                    break;
-            }
-
-            return nullptr;
-        }
-
-        Type* get_pointer_type(Type* type)
-        {
-            assert(type);
-
-            for (auto& pt_type : pointer_types)
-            {
-                if (pt_type.type == type)
-                {
-                    return reinterpret_cast<Type*>(&pt_type);
-                }
-            }
-
-            PointerType* pointer_type = pointer_types.allocate();
-            pointer_type->base.id = TypeID::Pointer;
-            pointer_type->type = type;
-
-            return reinterpret_cast<Type*>(pointer_type);
-        }
-
-        ConstantArray* get_constant_array(Slice<Value*> values, Type* type)
-        {
-            ConstantArray* constarray = constant_arrays.allocate();
-            constarray->value.base_id = ValueID::ConstantArray;
-            constarray->array_type = type;
-            constarray->array_values = values;
-
-            return constarray;
-        }
-    };
-
-    Type* get_type(Allocator* allocator, Context& context, User::Type* type)
-    {
-        assert(type);
-        switch (type->id)
-        {
-            case User::TypeID::FunctionType:
-            {
-                Type* ret_type = get_type(allocator, context, type->function_t.ret_type);
-                assert(ret_type);
-                auto arg_count = type->function_t.arg_types.len;
-
-                for (auto& fn_type : context.function_types)
-                {
-                    if (ret_type != fn_type.ret_type)
-                    {
-                        continue;
-                    }
-                    for (auto i = 0; i < type->function_t.arg_types.len; i++)
-                    {
-                        auto* user_arg_type = type->function_t.arg_types[i];
-                        auto* arg_type = get_type(allocator, context, user_arg_type);
-                        auto* fn_arg_type = fn_type.arg_types[i];
-                        if (arg_type == fn_arg_type)
-                        {
-                            continue;
-                        }
-                        break;
-                    }
-
-                    return reinterpret_cast<Type*>(&fn_type);
-                }
-
-                FunctionType* function_type = context.function_types.allocate();
-                function_type->base.id = TypeID::Function;
-                if (arg_count)
-                {
-                    function_type->arg_types.ptr = new(allocator) Type * [arg_count];
-                    function_type->arg_types.len = arg_count;
-                }
-                function_type->ret_type = ret_type;
-
-                return reinterpret_cast<Type*>(function_type);
-            } break;
-            case User::TypeID::IntegerType:
-            {
-                auto bits = type->integer_t.bits;
-                return context.get_integer_type(bits);
-            } break;
-            case User::TypeID::ArrayType:
-            {
-                auto count = type->array_t.count;
-                auto* elem_type = get_type(allocator, context, type->array_t.type);
-                for (auto& array_type : context.array_types)
-                {
-                    if (array_type.count == count && array_type.type == elem_type)
-                    {
-                        return reinterpret_cast<Type*>(&array_type);
-                    }
-                }
-
-                ArrayType* array_type = context.array_types.allocate();
-                array_type->base.id = TypeID::Array;
-                array_type->count = count;
-                array_type->type = elem_type;
-
-                return reinterpret_cast<Type*>(array_type);
-            } break;
-            default:
-                RNS_NOT_IMPLEMENTED;
-                break;
-        }
-        return nullptr;
-    }
-
-    /*
-    Unary instruction,
-    unary operator
-    binary operator,
-    cast instruction,
-    cmp instruction,
-    call instruction, (intrinsics in LLVM are based of this)
-        -instrinsic
-
-    */
-
-    enum class InstructionID : u8
-    {
-        // Terminator
-        Ret = 1,
-        Br = 2,
-        Switch_ = 3,
-        Indirectbr = 4,
-        Invoke = 5,
-        Resume = 6,
-        Unreachable = 7,
-        Cleanup_ret = 8,
-        Catch_ret = 9,
-        Catch_switch = 10,
-        Call_br = 11,
-
-        // Unary
-        Fneg = 12,
-
-        // Binary
-        Add = 13,
-        Fadd = 14,
-        Sub = 15,
-        Fsub = 16,
-        Mul = 17,
-        Fmul = 18,
-        Udiv = 19,
-        Sdiv = 20,
-        Fdiv = 21,
-        Urem = 22,
-        Srem = 23,
-        Frem = 24,
-
-        // Logical
-        Shl = 25,
-        Lshr = 26,
-        Ashr = 27,
-        And = 28,
-        Or = 29,
-        Xor = 30,
-
-        // Memory
-        Alloca = 31,
-        Load = 32,
-        Store = 33,
-        GetElementPtr = 34,
-        Fence = 35,
-        AtomicCmpXchg = 36,
-        AtomicRMW = 37,
-
-        // Cast
-        Trunc = 38,
-        ZExt = 39,
-        SExt = 40,
-        FPToUI = 41,
-        FPToSI = 42,
-        UIToFP = 43,
-        SIToFP = 44,
-        FPTrunc = 45,
-        FPExt = 46,
-        PtrToInt = 47,
-        IntToPtr = 48,
-        BitCast = 49,
-        AddrSpaceCast = 50,
-
-        // FuncLetPad
-        CleanupPad = 51,
-        CatchPad = 52,
-
-        // Other
-        ICmp = 53,
-        FCmp = 54,
-        Phi = 55,
-        Call = 56,
-        Select = 57,
-        UserOp1 = 58,
-        UserOp2 = 59,
-        VAArg = 60,
-        ExtractElement = 61,
-        InsertElement = 62,
-        ShuffleVector = 63,
-        ExtractValue = 64,
-        InsertValue = 65,
-        LandingPad = 66,
-        Freeze = 67,
-    };
-
-    // Intrinsics are instances of the call instruction in LLVM
-    // Intrinsics enums for x86-64
     enum class IntrinsicID
     {
         addressofreturnaddress = 1,                    // llvm.addressofreturnaddress
@@ -754,6 +430,387 @@ namespace RNS
         xray_typedevent,                           // llvm.xray.typedevent
         num_intrinsics = 8052
     };
+    struct Intrinsic
+    {
+        Value value;
+        IntrinsicID intrinsicID;
+
+        StringView get_intrinsic_name()
+        {
+            switch (intrinsicID)
+            {
+                case IntrinsicID::memcpy:
+                {
+                    return SV("memcpy");
+                } break;
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+
+            return {};
+        }
+    };
+
+    struct ConstantInt
+    {
+        Value value;
+        u64 int_value; // @TODO: consider expanding this to support vector integers?
+        u32 bit_count;
+        bool is_signed;
+    };
+
+    struct OperatorBitCast
+    {
+        Value value;
+        Value* cast_value;
+    };
+
+    struct Context
+    {
+        Type void_type, label_type;
+        IntegerType i1, i8, i16, i32, i64;
+        FloatType f32, f64;
+        // @TODO: add vector types and custom types
+
+        Buffer<FunctionType> function_types;
+        Buffer<ArrayType> array_types;
+        Buffer<PointerType> pointer_types;
+        Buffer<ConstantArray> constant_arrays;
+        Buffer<ConstantInt> constant_ints;
+        Buffer<Intrinsic> intrinsics;
+
+        static Context create(Allocator* allocator)
+        {
+            auto get_base_type = [](TypeID type, const char* name)
+            {
+                Type base = {
+                    .name = StringView::create(name, strlen(name)),
+                    .id = type,
+                };
+
+                return base;
+            };
+
+            Context context = {};
+            context.void_type = get_base_type(TypeID::Void, "void");
+            context.label_type = get_base_type(TypeID::Label, "label");
+
+            auto get_integer_type = [&](u16 bits, const char* name)
+            {
+                IntegerType integer_type = {
+                    .base = get_base_type(TypeID::Integer, name),
+                    .bits = bits,
+                };
+
+                return integer_type;
+            };
+
+            context.i1 = get_integer_type(1, "i1");
+            context.i8 = get_integer_type(8, "i8");
+            context.i16 = get_integer_type(16, "i16");
+            context.i32 = get_integer_type(32, "i32");
+            context.i64 = get_integer_type(64, "i64");
+
+            auto get_float_type = [&](u16 bits, const char* name)
+            {
+                FloatType float_type = {
+                    .base = get_base_type(TypeID::Integer, name),
+                    .bits = bits,
+                };
+
+                return float_type;
+            };
+
+            context.f32 = get_float_type(32, "f32");
+            context.f64 = get_float_type(64, "f64");
+
+            context.function_types = context.function_types.create(allocator, 1024);
+            context.array_types = context.array_types.create(allocator, 1024);
+            context.pointer_types = context.pointer_types.create(allocator, 1024);
+            context.constant_arrays = context.constant_arrays.create(allocator, 1024);
+            context.constant_ints = context.constant_ints.create(allocator, 1024);
+            context.intrinsics = context.intrinsics.create(allocator, 1024);
+
+            return context;
+        }
+
+        Type* get_void_type()
+        {
+            return &void_type;
+        }
+
+        Type* get_label_type()
+        {
+            return &label_type;
+        }
+
+        Type* get_boolean_type()
+        {
+            return reinterpret_cast<Type*>(&i1);
+        }
+
+        Type* get_integer_type(u16 bits)
+        {
+            switch (bits)
+            {
+                case 1:
+                    return reinterpret_cast<Type*>(&i1);
+                case 8:
+                    return reinterpret_cast<Type*>(&i8);
+                case 16:
+                    return reinterpret_cast<Type*>(&i16);
+                case 32:
+                    return reinterpret_cast<Type*>(&i32);
+                case 64:
+                    return reinterpret_cast<Type*>(&i64);
+                default:
+                    RNS_NOT_IMPLEMENTED;
+            }
+
+            return nullptr;
+        }
+
+        Type* get_float_type(u16 bits)
+        {
+            switch (bits)
+            {
+                case 32:
+                    return reinterpret_cast<Type*>(&f32);
+                case 64:
+                    return reinterpret_cast<Type*>(&f64);
+                default:
+                    RNS_NOT_IMPLEMENTED;
+                    break;
+            }
+
+            return nullptr;
+        }
+
+        Type* get_pointer_type(Type* type)
+        {
+            assert(type);
+
+            for (auto& pt_type : pointer_types)
+            {
+                if (pt_type.type == type)
+                {
+                    return reinterpret_cast<Type*>(&pt_type);
+                }
+            }
+
+            PointerType* pointer_type = pointer_types.allocate();
+            pointer_type->base.id = TypeID::Pointer;
+            pointer_type->type = type;
+
+            return reinterpret_cast<Type*>(pointer_type);
+        }
+
+        ConstantArray* get_constant_array(Slice<Value*> values, Type* type)
+        {
+            ConstantArray* constarray = constant_arrays.allocate();
+            constarray->value.base_id = ValueID::ConstantArray;
+            constarray->array_type = type;
+            constarray->array_values = values;
+
+            return constarray;
+        }
+
+
+
+        ConstantInt* get_constant_int(Type* type, u64 value, bool is_signed)
+        {
+            assert(type);
+            assert(type->id == TypeID::Integer);
+            auto* integer_type = reinterpret_cast<IntegerType*>(type);
+            auto bits = integer_type->bits;
+            assert(bits >= 1 && bits <= 64);
+
+            auto* new_int = constant_ints.allocate();
+            assert(new_int);
+            new_int->value.type = type;
+            new_int->value.base_id = ValueID::ConstantInt;
+            new_int->int_value = value;
+            new_int->is_signed = is_signed;
+            new_int->bit_count = bits;
+
+            return new_int;
+        }
+    };
+
+    Type* get_type(Allocator* allocator, Context& context, User::Type* type)
+    {
+        assert(type);
+        switch (type->id)
+        {
+            case User::TypeID::FunctionType:
+            {
+                Type* ret_type = get_type(allocator, context, type->function_t.ret_type);
+                assert(ret_type);
+                auto arg_count = type->function_t.arg_types.len;
+
+                for (auto& fn_type : context.function_types)
+                {
+                    if (ret_type != fn_type.ret_type)
+                    {
+                        continue;
+                    }
+                    for (auto i = 0; i < type->function_t.arg_types.len; i++)
+                    {
+                        auto* user_arg_type = type->function_t.arg_types[i];
+                        auto* arg_type = get_type(allocator, context, user_arg_type);
+                        auto* fn_arg_type = fn_type.arg_types[i];
+                        if (arg_type == fn_arg_type)
+                        {
+                            continue;
+                        }
+                        break;
+                    }
+
+                    return reinterpret_cast<Type*>(&fn_type);
+                }
+
+                FunctionType* function_type = context.function_types.allocate();
+                function_type->base.id = TypeID::Function;
+                if (arg_count)
+                {
+                    function_type->arg_types.ptr = new(allocator) Type * [arg_count];
+                    function_type->arg_types.len = arg_count;
+                }
+                function_type->ret_type = ret_type;
+
+                return reinterpret_cast<Type*>(function_type);
+            } break;
+            case User::TypeID::IntegerType:
+            {
+                auto bits = type->integer_t.bits;
+                return context.get_integer_type(bits);
+            } break;
+            case User::TypeID::ArrayType:
+            {
+                auto count = type->array_t.count;
+                auto* elem_type = get_type(allocator, context, type->array_t.type);
+                for (auto& array_type : context.array_types)
+                {
+                    if (array_type.count == count && array_type.type == elem_type)
+                    {
+                        return reinterpret_cast<Type*>(&array_type);
+                    }
+                }
+
+                ArrayType* array_type = context.array_types.allocate();
+                array_type->base.id = TypeID::Array;
+                array_type->count = count;
+                array_type->type = elem_type;
+
+                return reinterpret_cast<Type*>(array_type);
+            } break;
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
+        }
+        return nullptr;
+    }
+
+    /*
+    Unary instruction,
+    unary operator
+    binary operator,
+    cast instruction,
+    cmp instruction,
+    call instruction, (intrinsics in LLVM are based of this)
+        -instrinsic
+
+    */
+
+    enum class InstructionID : u8
+    {
+        // Terminator
+        Ret = 1,
+        Br = 2,
+        Switch_ = 3,
+        Indirectbr = 4,
+        Invoke = 5,
+        Resume = 6,
+        Unreachable = 7,
+        Cleanup_ret = 8,
+        Catch_ret = 9,
+        Catch_switch = 10,
+        Call_br = 11,
+
+        // Unary
+        Fneg = 12,
+
+        // Binary
+        Add = 13,
+        Fadd = 14,
+        Sub = 15,
+        Fsub = 16,
+        Mul = 17,
+        Fmul = 18,
+        Udiv = 19,
+        Sdiv = 20,
+        Fdiv = 21,
+        Urem = 22,
+        Srem = 23,
+        Frem = 24,
+
+        // Logical
+        Shl = 25,
+        Lshr = 26,
+        Ashr = 27,
+        And = 28,
+        Or = 29,
+        Xor = 30,
+
+        // Memory
+        Alloca = 31,
+        Load = 32,
+        Store = 33,
+        GetElementPtr = 34,
+        Fence = 35,
+        AtomicCmpXchg = 36,
+        AtomicRMW = 37,
+
+        // Cast
+        Trunc = 38,
+        ZExt = 39,
+        SExt = 40,
+        FPToUI = 41,
+        FPToSI = 42,
+        UIToFP = 43,
+        SIToFP = 44,
+        FPTrunc = 45,
+        FPExt = 46,
+        PtrToInt = 47,
+        IntToPtr = 48,
+        BitCast = 49,
+        AddrSpaceCast = 50,
+
+        // FuncLetPad
+        CleanupPad = 51,
+        CatchPad = 52,
+
+        // Other
+        ICmp = 53,
+        FCmp = 54,
+        Phi = 55,
+        Call = 56,
+        Select = 57,
+        UserOp1 = 58,
+        UserOp2 = 59,
+        VAArg = 60,
+        ExtractElement = 61,
+        InsertElement = 62,
+        ShuffleVector = 63,
+        ExtractValue = 64,
+        InsertValue = 65,
+        LandingPad = 66,
+        Freeze = 67,
+    };
+
+    // Intrinsics are instances of the call instruction in LLVM
+    // Intrinsics enums for x86-64
 
     struct SlotTracker;
 
@@ -805,40 +862,6 @@ namespace RNS
     };
 
 
-    struct ConstantInt
-    {
-        Value e;
-        union
-        {
-            u64 eight_byte;
-            u64* more_than_eight_byte;
-        } value;
-        u32 bit_count;
-        bool is_signed;
-
-        static ConstantInt* get(Allocator* allocator, RNS::Type* type, u64 value, bool is_signed)
-        {
-            assert(type);
-            assert(type->id == TypeID::Integer);
-            auto* integer_type = reinterpret_cast<IntegerType*>(type);
-            auto bits = integer_type->bits;
-            assert(bits >= 1 && bits <= 64);
-
-            auto* new_int = new(allocator) ConstantInt;
-            assert(new_int);
-            *new_int = {
-                .e = {
-                    .type = type,
-                    .base_id = ValueID::ConstantInt,
-                },
-                .value = value,
-                .bit_count = bits,
-                .is_signed = is_signed,
-            };
-
-            return new_int;
-        }
-    };
 
     enum class CmpType : u8
     {
@@ -938,6 +961,14 @@ namespace RNS
             {
                 sprintf(buffer, "void");
             } break;
+            case TypeID::Array:
+            {
+                char arr_type_buffer[64];
+                auto* array_type = reinterpret_cast<ArrayType*>(type);
+                auto length = array_type->count;
+                auto arr_elem_type = array_type->type;
+                sprintf(buffer, "[%llu x %s]", length, type_to_string(arr_elem_type, arr_type_buffer));
+            } break;
             default:
                 RNS_NOT_IMPLEMENTED;
                 break;
@@ -1032,6 +1063,7 @@ namespace RNS
             char operand1[64] = {};
             char operand2[64] = {};
             char type_buffer[64];
+            char type_buffer2[64];
 
             printf("\t");
             switch (base.id)
@@ -1092,51 +1124,101 @@ namespace RNS
                 case InstructionID::Call:
                 {
                     Value* callee = operands[0];
-                    assert(callee->base_id == ValueID::GlobalFunction);
+                    StringView name = {};
                     auto* ret_type = callee->type;
                     assert(ret_type);
-                    Function* callee_function = reinterpret_cast<Function*>(callee);
-                    assert(callee_function);
+
+                    switch (callee->base_id)
+                    {
+                        case ValueID::GlobalFunction:
+                        {
+                            Function* callee_function = reinterpret_cast<Function*>(callee);
+                            assert(callee_function);
+                            name = callee_function->name;
+                        } break;
+                        case ValueID::Intrinsic:
+                        {
+                            Intrinsic* called_intrinsic = reinterpret_cast<Intrinsic*>(callee);
+                            name = called_intrinsic->get_intrinsic_name();
+                            assert(called_intrinsic);
+                        } break;
+                        default:
+                            RNS_NOT_IMPLEMENTED;
+                            break;
+                    }
                     auto ret_type_not_void = ret_type->id != TypeID::Void;
                     if (ret_type_not_void)
                     {
                         printf("%%%llu = ", id1);
                     }
-                    printf("call i32 @%s(", callee_function->name.get());
+                    printf("call i32 @%s(", name.get());
 
                     auto arg_count = operand_count - 1;
                     if (arg_count)
                     {
                         auto print_arg = [](Value* operand)
                         {
-#if 0
                             char type_buffer[64];
+                            char type_buffer2[64];
 
-                            if (operand->typeID == TypeID::LabelType)
+                            switch (operand->base_id)
                             {
-                                // @MaybeBuggy Here are interpreting this operand is a load, which might be not true
-                                auto* instr = reinterpret_cast<Instruction*>(operand);
-                                assert(instr);
-                                switch (instr->base.id)
+                                case ValueID::Instruction:
                                 {
-                                    case InstructionID::Alloca:
+                                    auto* instr = reinterpret_cast<Instruction*>(operand);
+                                    assert(instr);
+                                    switch (instr->base.id)
                                     {
-                                        printf("%s %%%llu", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id1);
-                                    } break;
-                                    case InstructionID::Load:
+                                        case InstructionID::Alloca:
+                                        {
+                                            printf("%s %%%llu", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id1);
+                                        } break;
+                                        case InstructionID::Load:
+                                        {
+                                            printf("%s %%%llu", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id3);
+                                        } break;
+                                        case InstructionID::BitCast:
+                                        {
+                                            printf("%s %%%llu", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id3);
+                                        } break;
+                                        default:
+                                            RNS_NOT_IMPLEMENTED;
+                                            break;
+                                    }
+                                } break;
+                                case ValueID::OperatorBitCast:
+                                {
+                                    auto* bitcast = reinterpret_cast<OperatorBitCast*>(operand);
+                                    assert(bitcast->value.base_id == ValueID::OperatorBitCast);
+                                    auto* cast_value = bitcast->cast_value;
+                                    auto* dst_type = bitcast->value.type;
+                                    switch (cast_value->base_id)
                                     {
-                                        printf("%s %%%llu", type_to_string(operand->type, type_buffer), reinterpret_cast<Instruction*>(operand)->id3);
-                                    } break;
-                                    default:
-                                        RNS_NOT_IMPLEMENTED;
-                                        break;
-                                }
+                                        case ValueID::ConstantArray:
+                                        {
+                                            auto* constarr = reinterpret_cast<ConstantArray*>(cast_value);
+                                            auto* src_type = constarr->array_type;
+                                            // @TODO: this gives a nullptr, fix
+                                            // auto* dst_type = constarr->value.type;
+                                            printf("bitcast (%s* constarr to %s", type_to_string(src_type, type_buffer), type_to_string(dst_type, type_buffer2));
+                                        } break;
+                                        default:
+                                            RNS_NOT_IMPLEMENTED;
+                                            break;
+                                    }
+                                } break;
+                                case ValueID::ConstantInt:
+                                {
+                                    auto* constant_int = reinterpret_cast<ConstantInt*>(operand);
+                                    auto* type = constant_int->value.type;
+                                    auto value = constant_int->int_value;
+                                    auto is_signed = constant_int->is_signed;
+                                    printf("%s %s%llu", type_to_string(type, type_buffer), is_signed ? " -" : " ", value);
+                                } break;
+                                default:
+                                    RNS_NOT_IMPLEMENTED;
+                                    break;
                             }
-                            else
-                            {
-                                RNS_NOT_IMPLEMENTED;
-                            }
-#endif
                         };
 
                         for (auto i = 1; i < arg_count; i++)
@@ -1150,6 +1232,45 @@ namespace RNS
                     }
 
                     printf(")");
+                } break;
+                case InstructionID::BitCast:
+                {
+                    auto* cast_value = operands[0];
+                    assert(cast_value->base_id == ValueID::Instruction);
+                    auto* cast_value_instr = reinterpret_cast<Instruction*>(cast_value);
+                    assert(cast_value_instr->base.id == InstructionID::Alloca);
+                    auto* cast_value_type = cast_value_instr->alloca_i.allocated_type;
+                    printf("%%%llu = bitcast %s* %s to %s", id3, type_to_string(cast_value_type, type_buffer), operands[0]->print(operand0, slot_tracker), type_to_string(this->base.value.type, type_buffer2));
+                } break;
+                case InstructionID::GetElementPtr:
+                {
+                    // @TODO: refactor this into the GEP instruction
+                    bool inbounds = true;
+                    printf("%%%llu = getelementptr %s %s, %s* %s", id1, inbounds ? "inbounds " : " ", type_to_string(this->base.value.type, type_buffer), type_to_string(this->operands[0]->type, type_buffer2), operands[0]->print(operand0, slot_tracker));
+                    auto print_gep_indices = [](Value* index)
+                    {
+                        char buffer[64];
+                        switch (index->base_id)
+                        {
+                            case ValueID::ConstantInt:
+                            {
+                                auto* constant_int = reinterpret_cast<ConstantInt*>(index);
+                                auto* type = constant_int->value.type;
+                                auto value = constant_int->int_value;
+                                auto is_signed = constant_int->is_signed;
+                                printf("%s %s%llu", type_to_string(type, buffer), is_signed ? " -" : " ", value);
+                            } break;
+                            default:
+                                RNS_NOT_IMPLEMENTED;
+                                break;
+                        }
+                    };
+
+                    for (auto i = 1; i < operand_count; i++)
+                    {
+                        auto* operand = operands[i];
+                        print_gep_indices(operand);
+                    }
                 } break;
                 default:
                     RNS_NOT_IMPLEMENTED;
@@ -1179,7 +1300,15 @@ namespace RNS
                 {
                     id3 = slot_tracker.new_id(this);
                 } break;
+                case InstructionID::BitCast:
+                {
+                    id3 = slot_tracker.new_id(this);
+                } break;
                 case InstructionID::Call:
+                {
+                    id1 = slot_tracker.new_id(this);
+                } break;
+                case InstructionID::GetElementPtr:
                 {
                     id1 = slot_tracker.new_id(this);
                 } break;
@@ -1201,6 +1330,27 @@ namespace RNS
         assert(this);
         switch (this->base_id)
         {
+            case ValueID::Instruction:
+            {
+                auto* instruction = reinterpret_cast<Instruction*>(this);
+                auto id1 = instruction->id1;
+                auto id2 = instruction->id2;
+                auto id3 = instruction->id3;
+                switch (instruction->base.id)
+                {
+                    case InstructionID::Alloca:
+                    {
+                        sprintf(buffer, "%%%llu", id1);
+                    } break;
+                    case InstructionID::GetElementPtr:
+                    {
+                        sprintf(buffer, "%%%llu", id1);
+                    } break;
+                    default:
+                        RNS_NOT_IMPLEMENTED;
+                        break;
+                }
+            } break;
             default:
                 RNS_NOT_IMPLEMENTED;
                 break;
@@ -1298,7 +1448,6 @@ namespace RNS
         }
 
         char ret_type_buffer[64];
-        auto* type = this->value.type;
         assert(type);
         auto* function_type = reinterpret_cast<FunctionType*>(type);
         auto* ret_type = function_type->ret_type;
@@ -1636,6 +1785,70 @@ namespace RNS
 
             return insert_at_end(i);
         }
+
+        OperatorBitCast* create_bitcast_operator(Allocator* allocator, Value* value, Type* type)
+        {
+            assert(type);
+            OperatorBitCast bitcast_operator = {
+                .value = {
+                    .type = type,
+                    .base_id = ValueID::OperatorBitCast,
+                },
+                .cast_value = value,
+            };
+
+            auto* bc_operator = new(allocator) OperatorBitCast;
+            *bc_operator = bitcast_operator;
+            assert(bc_operator);
+            return bc_operator;
+        }
+        // @TODO: should this be an instruction?
+        Instruction* create_bitcast(Value* value, Type* type)
+        {
+            Instruction i = {
+                .base = {
+                    .value = {
+                        .type = type,
+                        .base_id = ValueID::Instruction,
+                    },
+                    .id = InstructionID::BitCast,
+                },
+                .operands = { value, },
+                .operand_count = 1,
+            };
+
+            return insert_at_end(i);
+        }
+
+        Instruction* create_memcopy_intrinsic(Slice<Value*> arguments)
+        {
+            Intrinsic* memcpy_intrinsic = nullptr;
+            for (auto& intrinsic : context.intrinsics)
+            {
+                if (intrinsic.intrinsicID == IntrinsicID::memcpy)
+                {
+                    memcpy_intrinsic = &intrinsic;
+                    break;
+                }
+            }
+
+            if (!memcpy_intrinsic)
+            {
+                Intrinsic i = {
+                    .value = {
+                        .type = context.get_void_type(),
+                        .base_id = ValueID::Intrinsic,
+                    },
+                    .intrinsicID = IntrinsicID::memcpy,
+                };
+
+                memcpy_intrinsic = context.intrinsics.append(i);
+            }
+
+            auto* intrinsic_call = create_call(reinterpret_cast<Value*>(memcpy_intrinsic), arguments);
+            return intrinsic_call;
+        }
+
     private:
         Instruction* insert_alloca(Instruction alloca_instruction)
         {
@@ -1718,12 +1931,27 @@ namespace RNS
         return false;
     }
 
-    void emit_jump(Allocator* allocator, Builder& builder, BasicBlock* dst_block)
+    usize get_size(Type* type)
     {
-        builder.create_br(dst_block);
-        auto* new_block = builder.create_block(allocator);
-        builder.append_to_function(new_block);
-        builder.set_block(new_block);
+        switch (type->id)
+        {
+            case TypeID::Array:
+            {
+                auto* array_type = reinterpret_cast<ArrayType*>(type);
+                return array_type->count * get_size(array_type->type);
+            } break;
+            case TypeID::Integer:
+            {
+                auto* integer_type = reinterpret_cast<IntegerType*>(type); 
+                assert(integer_type->bits % 8 == 0);
+                return integer_type->bits / 8;
+            }
+            default:
+                RNS_NOT_IMPLEMENTED;
+                break;
+        }
+
+        return 0;
     }
 
     Value* do_node(Allocator* allocator, Builder& builder, Node* node, Type* expected_type = nullptr)
@@ -1851,11 +2079,7 @@ namespace RNS
                 assert(jump_target);
 
                 // @TODO: this may be buggy
-#if 0
-                emit_jump(allocator, builder, jump_target);
-#else
                 builder.create_br(jump_target);
-#endif
             } break;
             case NodeType::VarDecl:
             {
@@ -1866,22 +2090,30 @@ namespace RNS
                 auto* var_alloca = builder.create_alloca(rns_type);
                 node->var_decl.backend_ref = var_alloca;
 
-                auto* value = node->var_decl.value;
-                if (value)
+                auto* value_node = node->var_decl.value;
+                if (value_node)
                 {
                     switch (rns_type->id)
                     {
                         case TypeID::Array:
                         {
-                            auto* expression = do_node(allocator, builder, value, rns_type);
+                            auto* expression = do_node(allocator, builder, value_node, rns_type);
                             assert(expression);
                             assert(expression->base_id == ValueID::ConstantArray);
-                            // call intrinsic memcpy to copy the array constant to the array alloca
-                            RNS_NOT_IMPLEMENTED;
+                            auto* pointer_to_i8_type = builder.context.get_pointer_type(builder.context.get_integer_type(8));
+                            auto* array_cast_to_i8 = builder.create_bitcast(reinterpret_cast<Value*>(var_alloca), pointer_to_i8_type);
+                            auto memcpy_size = get_size(rns_type);
+                            auto* memcopy_size_value = builder.context.get_constant_int(builder.context.get_integer_type(64), memcpy_size, false);
+                            // We need to bitcast **as operator** the constant array
+                            assert(expression->base_id == ValueID::ConstantArray);
+                            auto* bitcast_constant_array = builder.create_bitcast_operator(allocator, expression, pointer_to_i8_type);
+                            Value* memcopy_args[] = { reinterpret_cast<Value*>(array_cast_to_i8), reinterpret_cast<Value*>(bitcast_constant_array), reinterpret_cast<Value*>(memcopy_size_value), };
+                            Slice<Value*> memcopy_args_slice = { memcopy_args, rns_array_length(memcopy_args) };
+                            builder.create_memcopy_intrinsic(memcopy_args_slice);
                         } break;
                         default:
                         {
-                            auto* expression = do_node(allocator, builder, value, rns_type);
+                            auto* expression = do_node(allocator, builder, value_node, rns_type);
                             assert(expression);
                             builder.create_store(expression, reinterpret_cast<Value*>(var_alloca), false);
                         } break;
@@ -1894,7 +2126,7 @@ namespace RNS
             } break;
             case NodeType::IntLit:
             {
-                auto* result = ConstantInt::get(allocator, builder.context.get_integer_type(32), node->int_lit.lit, node->int_lit.is_signed);
+                auto* result = builder.context.get_constant_int(builder.context.get_integer_type(32), node->int_lit.lit, node->int_lit.is_signed);
                 assert(result);
                 return reinterpret_cast<Value*>(result);
             }
@@ -2187,10 +2419,14 @@ namespace RNS
                 auto* alloca_instruction = reinterpret_cast<Instruction*>(alloca_value);
                 auto* alloca_type = alloca_instruction->alloca_i.allocated_type;
                 assert(alloca_type);
-                auto* zero_value = ConstantInt::get(allocator, builder.context.get_integer_type(32), 0, false);
+                assert(alloca_type->id == TypeID::Array);
+                auto* arr_type = reinterpret_cast<ArrayType*>(alloca_type);
+                auto* arr_elem_type = arr_type->type;
+                assert(arr_elem_type);
+                auto* zero_value = builder.context.get_constant_int(builder.context.get_integer_type(32), 0, false);
                 Value* indices[] = { reinterpret_cast<Value*>(zero_value), index_value };
                 Slice<Value*> indices_slice = { indices, rns_array_length(indices) };
-                auto* gep = builder.create_inbounds_GEP(alloca_type, alloca_value, indices_slice);
+                auto* gep = builder.create_inbounds_GEP(arr_elem_type, alloca_value, indices_slice);
                 return reinterpret_cast<Value*>(gep);
             } break;
             default:

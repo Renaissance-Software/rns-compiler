@@ -31,7 +31,6 @@
     <ClCompile Include="src\llvm_bytecode.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\parser.cpp" />
-    <ClCompile Include="src\x86_64.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\arch.h" />
@@ -46,8 +45,6 @@
     <ClInclude Include="src\lexer.h" />
     <ClInclude Include="src\llvm_bytecode.h" />
     <ClInclude Include="src\parser.h" />
-    <ClInclude Include="src\x86_64.h" />
-    <ClInclude Include="src\x86_64_encoding.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="src\test_files.h" />

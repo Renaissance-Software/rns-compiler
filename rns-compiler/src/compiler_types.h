@@ -427,6 +427,7 @@ namespace Lexer
             }
         }
     };
+
     static_assert(sizeof(Token) == 4 * (sizeof(u64)));
 
     struct LexerResult

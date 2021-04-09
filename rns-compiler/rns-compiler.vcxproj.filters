@@ -4,7 +4,6 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\lexer.cpp" />
     <ClCompile Include="src\parser.cpp" />
-    <ClCompile Include="src\x86_64.cpp" />
     <ClCompile Include="src\compiler_types.cpp" />
     <ClCompile Include="..\dependencies\rns-lib\lib\src\data_structures.cpp" />
     <ClCompile Include="..\dependencies\rns-lib\lib\src\os.cpp" />
@@ -14,8 +13,6 @@
     <ClInclude Include="src\lexer.h" />
     <ClInclude Include="src\parser.h" />
     <ClInclude Include="src\compiler_types.h" />
-    <ClInclude Include="src\x86_64_encoding.h" />
-    <ClInclude Include="src\x86_64.h" />
     <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\arch.h" />
     <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\compiler.h" />
     <ClInclude Include="..\dependencies\rns-lib\lib\include\RNS\c_containers.h" />

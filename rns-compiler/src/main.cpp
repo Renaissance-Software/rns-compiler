@@ -17,18 +17,11 @@
 #undef USE_IMGUI
 #define USE_IMGUI 0
 #endif
-#if USE_IMGUI
-#include "my_imgui.h"
-#endif
 
 #include "compiler_types.h"
 #include "lexer.h"
 #include "parser.h"
 #include "llvm_bytecode.h"
-#if USE_LLVM
-#include "llvm_backend.h"
-#endif
-#include "x86_64.h"
 
 using namespace RNS;
 
@@ -66,10 +59,6 @@ bool compiler_workflow(RNS::String file)
         return false;
     }
 
-#if USE_LLVM
-    CompilerIR compiler_ir = CompilerIR::LLVM;
-    LLVM::encode(compiler, &parser_result);
-#else
     CompilerIR compiler_ir = CompilerIR::LLVM_CUSTOM;
     switch (compiler_ir)
     {
@@ -81,7 +70,7 @@ bool compiler_workflow(RNS::String file)
             RNS_UNREACHABLE;
             break;
     }
-#endif
+
     if (compiler.errors_reported)
     {
         printf("IR generation failed\n");
@@ -99,9 +88,6 @@ s32 rns_main(s32 argc, char* argv[])
     PerformanceAPI_BeginEvent("Main function", nullptr, PERFORMANCEAPI_DEFAULT_COLOR);
 #endif
 
-#if USE_IMGUI
-    imgui_init();
-#endif
 #if TEST_FILES
     for (auto i = 0; i < rns_array_length(test_files); i++)
     {
